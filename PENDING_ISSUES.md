@@ -8,6 +8,7 @@
 
 ## Deferred By Scope
 
-- Auth/JWT flows are intentionally deferred; secrets are validated now for future auth readiness.
+- Auth/JWT flows are intentionally deferred; Task 3.1 added schema only.
+- Auth service, auth controller, DTOs, register/login APIs, and Google OAuth are intentionally deferred.
 - Product Prisma models are intentionally deferred.
 - AI provider, WhatsApp webhook, admin, and business modules are intentionally deferred.

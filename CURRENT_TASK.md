@@ -1,28 +1,26 @@
 # Current Task
 
-Task: Backend Foundation 2.2
+Task: Authentication Module 3.1
 
 Status: Completed
 
 Scope:
 
-- Prisma installation and configuration
-- Prisma datasource using `DATABASE_URL` and `DIRECT_URL`
-- Prisma Client generation
-- Minimal migration verification model
-- PrismaService
-- PrismaModule
-- Database connection check during app startup
-- Health endpoint database status
-- Prisma readiness endpoint
+- User Prisma model
+- RefreshToken Prisma model
+- UserStatus enum
+- Prisma migration
 
 Out of scope:
 
-- Auth
-- Users
-- Product Prisma models
-- Meal/weight/AI/memory/subscription tables
-- AI provider logic
-- WhatsApp webhook
-- Admin modules
+- Auth service
+- Auth controller
+- DTOs
+- JWT logic
+- Register/login APIs
+- Google OAuth
+- WhatsApp
+- Admin
 - Business features
+- Other product Prisma models
+- Meal/weight/AI/memory/subscription tables

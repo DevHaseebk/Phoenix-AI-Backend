@@ -17,14 +17,19 @@
 | Prisma Client generation | Complete | `npx prisma generate` verified |
 | Prisma migration baseline | Complete | Minimal `FoundationMigrationCheck` model only |
 | Prisma readiness check | Complete | `GET /api/v1/health/ready` |
+| User Prisma model | Complete | Added in Authentication Module 3.1 |
+| RefreshToken Prisma model | Complete | Added in Authentication Module 3.1 |
+| UserStatus enum | Complete | `ACTIVE`, `INACTIVE`, `SUSPENDED`, `DELETED` |
 
 ## Not Started
 
 | Feature | Status | Notes |
 |---|---|---|
-| Auth | Not started | Future task |
-| Users | Not started | Future task |
-| Product Prisma models | Not started | Future task |
+| Auth service/controller | Not started | Explicitly out of scope for Task 3.1 |
+| Register/login APIs | Not started | Future auth implementation task |
+| JWT logic | Not started | Future auth implementation task |
+| Google OAuth | Not started | Future auth implementation task |
+| User profile/product models | Not started | Future schema task |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |

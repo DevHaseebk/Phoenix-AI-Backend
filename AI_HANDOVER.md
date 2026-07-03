@@ -2,7 +2,7 @@
 
 ## Current State
 
-Backend Foundation 2.2 is complete.
+Authentication Module Task 3.1 is complete.
 
 The NestJS app now starts with:
 
@@ -16,13 +16,19 @@ The NestJS app now starts with:
 - Prisma configured against Supabase PostgreSQL,
 - Prisma Client generated,
 - database connection verified during Nest startup,
-- Prisma readiness endpoint at `GET /api/v1/health/ready`.
+- Prisma readiness endpoint at `GET /api/v1/health/ready`,
+- User Prisma model,
+- RefreshToken Prisma model,
+- UserStatus enum.
 
-Current Prisma schema contains only one non-product placeholder model:
+Current Prisma schema contains:
 
 - `FoundationMigrationCheck`
+- `User`
+- `RefreshToken`
+- `UserStatus`
 
-This exists only to verify migrations and should not be treated as an application domain model.
+`FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
 ## Decisions Used
 
@@ -32,17 +38,21 @@ This exists only to verify migrations and should not be treated as an applicatio
 - D-020 MVP database is PostgreSQL.
 - D-021 Prisma ORM is used.
 - D-023 Supabase PostgreSQL is used initially.
+- D-035 Auth is backend-owned.
+- D-036 Use JWT access token + refresh token.
+- D-039 Users can login on multiple devices.
+- D-041 Account deletion uses soft delete for 30 days.
 - D-045 Backend deploys to Render or Railway.
 - D-146 MVP is not medical diagnosis or treatment.
 - D-150 Documentation first.
 
 ## Next Recommended Task
 
-Auth foundation or first product Prisma schema migration, depending on the approved backend build order.
+Auth service/controller implementation, if approved.
 
 ## Guardrails
 
-- Do not add auth, users, AI, WhatsApp, admin, or business modules as part of this completed foundation task.
+- Do not add auth service/controller, DTOs, JWT logic, register/login APIs, Google OAuth, WhatsApp, admin, or business modules as part of this completed schema task.
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 
@@ -50,3 +60,4 @@ Auth foundation or first product Prisma schema migration, depending on the appro
 
 - Prisma CLI and Client are pinned to `6.19.3` because Prisma 7 requires a newer Node version than the current local runtime.
 - Migration applied: `20260703125907_foundation_2_2_prisma_setup`.
+- Migration applied: `20260703131635_auth_3_1_user_refresh_token`.

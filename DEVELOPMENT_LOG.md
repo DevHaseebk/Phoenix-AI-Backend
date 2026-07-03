@@ -145,3 +145,50 @@ npx prisma migrate status
 - WhatsApp webhook
 - Admin modules
 - Business logic
+
+## 2026-07-03 — Authentication Module 3.1
+
+### What changed
+
+- Added `UserStatus` enum:
+  - `ACTIVE`
+  - `INACTIVE`
+  - `SUSPENDED`
+  - `DELETED`
+- Added `User` Prisma model.
+- Added `RefreshToken` Prisma model.
+- Added `User` to `RefreshToken` relationship.
+- Added UUID primary keys using `@default(uuid())`.
+- Added soft-delete foundation through `User.deletedAt`.
+- Created and applied Prisma migration:
+  - `20260703131635_auth_3_1_user_refresh_token`
+
+### Prisma commands executed
+
+```bash
+npx prisma validate
+npx prisma generate
+npx prisma migrate dev --name auth_3_1_user_refresh_token
+```
+
+### Validation
+
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate dev --name auth_3_1_user_refresh_token`
+- `npm run lint`
+- `npm run build`
+- `npm run test`
+- `npm run test:e2e`
+
+### Intentionally not implemented
+
+- Auth service
+- Auth controller
+- DTOs
+- JWT logic
+- Register/login APIs
+- Google OAuth
+- WhatsApp
+- Admin
+- Business features
