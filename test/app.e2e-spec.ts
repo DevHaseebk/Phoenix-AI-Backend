@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { PrismaService } from './../src/prisma/prisma.service';
 import { AppModule } from './../src/app.module';
 
 interface HealthResponseBody {
@@ -10,6 +11,9 @@ interface HealthResponseBody {
   data: {
     status: string;
     environment: string;
+    database: {
+      connected: boolean;
+    };
   };
 }
 
@@ -22,6 +26,7 @@ describe('Health (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.get(PrismaService).readinessCheck = jest.fn().mockResolvedValue(true);
     app.setGlobalPrefix('api/v1');
     await app.init();
   });
@@ -37,6 +42,7 @@ describe('Health (e2e)', () => {
         expect(body.message).toBe('API is healthy');
         expect(body.data.status).toBe('ok');
         expect(['development', 'test']).toContain(body.data.environment);
+        expect(body.data.database.connected).toBe(true);
       });
   });
 

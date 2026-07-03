@@ -1,26 +1,27 @@
 # Current Task
 
-Task: Backend Foundation 2.1
+Task: Backend Foundation 2.2
 
 Status: Completed
 
 Scope:
 
-- Global API prefix
-- Config/environment validation
-- Global validation pipe
-- Global exception filter
-- Standard API response helper/interceptor
-- CORS setup
-- Swagger setup
-- Health endpoint
-- Backend tracking files
+- Prisma installation and configuration
+- Prisma datasource using `DATABASE_URL` and `DIRECT_URL`
+- Prisma Client generation
+- Minimal migration verification model
+- PrismaService
+- PrismaModule
+- Database connection check during app startup
+- Health endpoint database status
+- Prisma readiness endpoint
 
 Out of scope:
 
-- Prisma
 - Auth
 - Users
+- Product Prisma models
+- Meal/weight/AI/memory/subscription tables
 - AI provider logic
 - WhatsApp webhook
 - Admin modules

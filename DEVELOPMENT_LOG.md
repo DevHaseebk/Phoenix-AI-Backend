@@ -91,3 +91,57 @@ These will be added in later phases per the Project Phoenix docs.
 
 - `npm run build`
 - `npm run test`
+
+## 2026-07-03 — Backend Foundation 2.2
+
+### What changed
+
+- Installed Prisma CLI and Prisma Client.
+- Added `prisma/schema.prisma`.
+- Configured Prisma datasource with:
+  - `DATABASE_URL`
+  - `DIRECT_URL`
+- Configured Prisma Client generation.
+- Added a minimal non-product `FoundationMigrationCheck` model only to verify migrations.
+- Added `PrismaService`.
+- Added `PrismaModule`.
+- Imported Prisma into the backend application.
+- Verified database connection during Nest application startup through Prisma `$connect()`.
+- Extended `GET /api/v1/health` to include:
+  - `database.connected`
+- Added `GET /api/v1/health/ready` for a simple Prisma readiness check.
+- Created and applied the initial Prisma migration:
+  - `20260703125907_foundation_2_2_prisma_setup`
+
+### Prisma commands executed
+
+```bash
+npm install @prisma/client
+npm install -D prisma
+npm install @prisma/client@6.19.3
+npm install -D prisma@6.19.3
+npx prisma validate
+npx prisma generate
+npx prisma migrate dev --name foundation_2_2_prisma_setup
+npx prisma migrate status
+```
+
+### Validation
+
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run lint`
+- `npm run build`
+- `npm run test`
+- `npm run test:e2e`
+
+### Intentionally not implemented
+
+- Product Prisma models
+- User/auth schema
+- Meal/weight/AI/memory/subscription tables
+- Auth/JWT flows
+- WhatsApp webhook
+- Admin modules
+- Business logic
