@@ -7,6 +7,8 @@ NestJS API boilerplate for Project Phoenix. This repository is independent and i
 - NestJS
 - TypeScript
 - Express
+- Swagger/OpenAPI
+- Centralized config validation
 
 ## Prerequisites
 
@@ -35,14 +37,20 @@ npm run start:prod
 
 Default URL: `http://localhost:4000`
 
-Health check: `GET http://localhost:4000/health`
+Health check: `GET http://localhost:4000/api/v1/health`
+
+Swagger docs are available in development at:
+
+```text
+http://localhost:4000/api/docs
+```
 
 ## Project structure
 
 ```text
 src/
-  common/     # Shared helpers (placeholder)
-  config/     # Configuration (placeholder)
+  common/     # Shared responses, filters, interceptors
+  config/     # Environment validation
   health/     # Health check module
   app.module.ts
   main.ts
@@ -62,5 +70,23 @@ src/
 ## Environment
 
 Copy `.env.example` to `.env`. Never commit `.env`.
+
+Required variables:
+
+- `NODE_ENV`
+- `PORT`
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `JWT_ACCESS_SECRET`
+- `JWT_REFRESH_SECRET`
+- `GEMINI_API_KEY`
+
+Optional variables:
+
+- `RESEND_API_KEY`
+- `WHATSAPP_VERIFY_TOKEN`
+- `WHATSAPP_ACCESS_TOKEN`
+- `WHATSAPP_PHONE_NUMBER_ID`
+- `CORS_ORIGINS`
 
 See `DEVELOPMENT_LOG.md` for setup history and intentional exclusions.

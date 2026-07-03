@@ -4,6 +4,15 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
+interface HealthResponseBody {
+  success: boolean;
+  message: string;
+  data: {
+    status: string;
+    environment: string;
+  };
+}
+
 describe('Health (e2e)', () => {
   let app: INestApplication<App>;
 
@@ -13,16 +22,21 @@ describe('Health (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api/v1');
     await app.init();
   });
 
-  it('/health (GET)', () => {
+  it('/api/v1/health (GET)', () => {
     return request(app.getHttpServer())
-      .get('/health')
+      .get('/api/v1/health')
       .expect(200)
       .expect((response) => {
-        expect(response.body.status).toBe('ok');
-        expect(response.body.service).toBe('phoenix-backend');
+        const body = response.body as HealthResponseBody;
+
+        expect(body.success).toBe(true);
+        expect(body.message).toBe('API is healthy');
+        expect(body.data.status).toBe('ok');
+        expect(['development', 'test']).toContain(body.data.environment);
       });
   });
 
