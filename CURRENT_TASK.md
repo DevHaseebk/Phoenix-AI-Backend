@@ -1,26 +1,29 @@
 # Current Task
 
-Task: Authentication Module 3.1
+Task: Authentication Module 3.2
 
 Status: Completed
 
 Scope:
 
-- User Prisma model
-- RefreshToken Prisma model
-- UserStatus enum
-- Prisma migration
+- POST `/api/v1/auth/signup`
+- Signup DTO using `fullName`, `email`, and `password`
+- Auth module/controller/service
+- Argon2id password hashing
+- Duplicate email handling
+- Signup unit and e2e tests
 
 Out of scope:
 
-- Auth service
-- Auth controller
-- DTOs
 - JWT logic
-- Register/login APIs
+- Login API
+- Refresh token creation
+- Logout
 - Google OAuth
+- Password reset
+- Email verification
 - WhatsApp
+- User profile
 - Admin
+- Frontend/admin changes
 - Business features
-- Other product Prisma models
-- Meal/weight/AI/memory/subscription tables

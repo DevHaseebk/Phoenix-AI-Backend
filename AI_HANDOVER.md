@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.1 is complete.
+Authentication Module Task 3.2 is complete.
 
 The NestJS app now starts with:
 
@@ -19,7 +19,11 @@ The NestJS app now starts with:
 - Prisma readiness endpoint at `GET /api/v1/health/ready`,
 - User Prisma model,
 - RefreshToken Prisma model,
-- UserStatus enum.
+- UserStatus enum,
+- auth module/controller/service,
+- signup endpoint at `POST /api/v1/auth/signup`,
+- Argon2id password hashing,
+- duplicate email handling.
 
 Current Prisma schema contains:
 
@@ -48,13 +52,22 @@ Current Prisma schema contains:
 
 ## Next Recommended Task
 
-Auth service/controller implementation, if approved.
+Plan the next authentication slice, likely login plus JWT access token and refresh token issuance.
 
 ## Guardrails
 
-- Do not add auth service/controller, DTOs, JWT logic, register/login APIs, Google OAuth, WhatsApp, admin, or business modules as part of this completed schema task.
+- Signup currently creates a user only; it does not issue JWTs or create refresh tokens.
+- Do not add login, logout, refresh token rotation, Google OAuth, password reset, email verification, WhatsApp, admin, or business modules unless explicitly approved.
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
+
+## Auth Notes
+
+- Signup request fields are `fullName`, `email`, and `password`.
+- `fullName` is stored in `User.fullName`.
+- Email is trimmed/lowercased before duplicate checks and writes.
+- Passwords are hashed with Argon2id through the `argon2` package.
+- Signup response intentionally omits tokens for Task 3.2.
 
 ## Prisma Notes
 

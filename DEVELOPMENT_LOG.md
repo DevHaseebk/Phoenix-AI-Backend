@@ -192,3 +192,53 @@ npx prisma migrate dev --name auth_3_1_user_refresh_token
 - WhatsApp
 - Admin
 - Business features
+
+## 2026-07-03 - Authentication Module 3.2
+
+### What changed
+
+- Installed `argon2`.
+- Added Auth module.
+- Added Auth controller.
+- Added Auth service.
+- Added Signup DTO.
+- Added `POST /api/v1/auth/signup`.
+- Used request field `fullName` and stored it in `User.fullName`.
+- Normalized email by trimming and lowercasing before lookup/write.
+- Added Argon2id password hashing.
+- Added duplicate email handling with:
+  - pre-write lookup,
+  - Prisma unique constraint fallback handling.
+- Returned standard API response shape.
+- Added unit tests for signup user creation, password hashing, email normalization, and duplicate email rejection.
+- Added e2e tests for successful signup, duplicate email conflict, and invalid payload validation.
+
+### Commands executed
+
+```bash
+npm install argon2
+npm run lint
+npm run build
+npm run test
+npm run test:e2e
+```
+
+### Validation
+
+- `npm run lint`
+- `npm run build`
+- `npm run test`
+- `npm run test:e2e`
+
+### Intentionally not implemented
+
+- Login
+- JWT token issuance
+- Refresh token creation
+- Logout
+- Google OAuth
+- Password reset
+- Email verification
+- User profile
+- Admin auth
+- Frontend/admin changes

@@ -20,15 +20,22 @@
 | User Prisma model | Complete | Added in Authentication Module 3.1 |
 | RefreshToken Prisma model | Complete | Added in Authentication Module 3.1 |
 | UserStatus enum | Complete | `ACTIVE`, `INACTIVE`, `SUSPENDED`, `DELETED` |
+| Auth module/controller/service | Complete | Added in Authentication Module 3.2 |
+| Signup API | Complete | `POST /api/v1/auth/signup`, email/password only |
+| Password hashing | Complete | Argon2id via `argon2` |
+| Duplicate email handling | Complete | Normalized email pre-check plus Prisma unique constraint handling |
 
 ## Not Started
 
 | Feature | Status | Notes |
 |---|---|---|
-| Auth service/controller | Not started | Explicitly out of scope for Task 3.1 |
-| Register/login APIs | Not started | Future auth implementation task |
+| Login API | Not started | Explicitly out of scope for Task 3.2 |
 | JWT logic | Not started | Future auth implementation task |
+| Refresh token creation | Not started | Future auth implementation task |
+| Logout API | Not started | Future auth implementation task |
 | Google OAuth | Not started | Future auth implementation task |
+| Password reset | Not started | Future auth implementation task |
+| Email verification | Not started | Future auth implementation task |
 | User profile/product models | Not started | Future schema task |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
