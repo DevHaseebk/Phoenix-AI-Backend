@@ -1,0 +1,30 @@
+# Dependencies
+/node_modules
+
+# Build
+/dist
+/build
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDE
+.idea
+.vscode
+
+# Environment (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+!.env.example
+!.env.sample
