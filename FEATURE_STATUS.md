@@ -24,14 +24,19 @@
 | Signup API | Complete | `POST /api/v1/auth/signup`, email/password only |
 | Password hashing | Complete | Argon2id via `argon2` |
 | Duplicate email handling | Complete | Normalized email pre-check plus Prisma unique constraint handling |
+| Login API | Complete in code | `POST /api/v1/auth/login` |
+| JWT access token signing | Complete in code | 15 minute access token expiry from env |
+| Refresh token creation | Complete in code | Opaque random token, SHA-256 hash stored only |
+| Multi-device login | Complete in code | One `RefreshToken` row per successful login |
+| RefreshToken deviceType schema | Migration file created; DB apply blocked | `prisma migrate dev` fails with Prisma schema engine error against Supabase |
 
 ## Not Started
 
 | Feature | Status | Notes |
 |---|---|---|
-| Login API | Not started | Explicitly out of scope for Task 3.2 |
-| JWT logic | Not started | Future auth implementation task |
-| Refresh token creation | Not started | Future auth implementation task |
+| Refresh endpoint | Not started | Explicitly out of scope for Task 3.3 |
+| Token rotation | Not started | Explicitly out of scope for Task 3.3 |
+| Auth guards/protected routes | Not started | Explicitly out of scope for Task 3.3 |
 | Logout API | Not started | Future auth implementation task |
 | Google OAuth | Not started | Future auth implementation task |
 | Password reset | Not started | Future auth implementation task |

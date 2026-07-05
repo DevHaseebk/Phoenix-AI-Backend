@@ -13,6 +13,8 @@ const requiredEnvKeys = [
   'DIRECT_URL',
   'JWT_ACCESS_SECRET',
   'JWT_REFRESH_SECRET',
+  'JWT_ACCESS_EXPIRES_IN',
+  'JWT_REFRESH_EXPIRES_IN',
   'GEMINI_API_KEY',
 ] as const;
 
@@ -81,6 +83,14 @@ export function validateEnvironment(
     DIRECT_URL: getStringValue(config, 'DIRECT_URL') as string,
     JWT_ACCESS_SECRET: getStringValue(config, 'JWT_ACCESS_SECRET') as string,
     JWT_REFRESH_SECRET: getStringValue(config, 'JWT_REFRESH_SECRET') as string,
+    JWT_ACCESS_EXPIRES_IN: getStringValue(
+      config,
+      'JWT_ACCESS_EXPIRES_IN',
+    ) as string,
+    JWT_REFRESH_EXPIRES_IN: getStringValue(
+      config,
+      'JWT_REFRESH_EXPIRES_IN',
+    ) as string,
     GEMINI_API_KEY: getStringValue(config, 'GEMINI_API_KEY') as string,
     ...optionalValues,
   };

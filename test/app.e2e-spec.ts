@@ -19,14 +19,19 @@ interface HealthResponseBody {
 
 describe('Health (e2e)', () => {
   let app: INestApplication<App>;
+  const prisma = {
+    readinessCheck: jest.fn().mockResolvedValue(true),
+  };
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      .compile();
 
     app = moduleFixture.createNestApplication();
-    app.get(PrismaService).readinessCheck = jest.fn().mockResolvedValue(true);
     app.setGlobalPrefix('api/v1');
     await app.init();
   });

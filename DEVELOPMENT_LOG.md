@@ -242,3 +242,62 @@ npm run test:e2e
 - User profile
 - Admin auth
 - Frontend/admin changes
+
+## 2026-07-05 - Authentication Module 3.3
+
+### What changed
+
+- Installed `@nestjs/jwt`.
+- Added required environment variables:
+  - `JWT_ACCESS_EXPIRES_IN=15m`
+  - `JWT_REFRESH_EXPIRES_IN=30d`
+- Added Login DTO.
+- Added `POST /api/v1/auth/login`.
+- Added JWT access token signing.
+- Added opaque refresh token generation using Node `crypto`.
+- Added SHA-256 refresh token hashing using Node `crypto`.
+- Added `RefreshToken.deviceType String?` to Prisma schema.
+- Added migration SQL:
+  - `20260705170000_auth_3_3_login_device_type`
+- Stored only refresh token hash, never the raw refresh token.
+- Created one `RefreshToken` row per successful login.
+- Added `User.lastActiveAt` update on successful login.
+- Kept login error message generic: `Invalid email or password`.
+- Added unit tests for successful login, token creation, refresh token hashing, invalid credentials, and suspended users.
+- Added e2e tests for successful login and generic unauthorized login response.
+- Updated health e2e test to override Prisma provider before app initialization so tests do not require live database connectivity.
+
+### Commands executed
+
+```bash
+npm install @nestjs/jwt
+npx prisma validate
+npx prisma generate
+npx prisma migrate dev --name auth_3_3_login_device_type
+npm run lint
+npm run build
+npm run test
+npm run test:e2e
+```
+
+### Validation
+
+- `npx prisma validate` passed.
+- `npx prisma generate` passed.
+- `npx prisma migrate dev --name auth_3_3_login_device_type` failed with `Error: Schema engine error:` against the configured Supabase database.
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed.
+- `npm run test:e2e` passed.
+
+### Intentionally not implemented
+
+- Refresh endpoint
+- Logout
+- Token rotation
+- Auth guards
+- Protected routes
+- Google OAuth
+- Password reset
+- Email verification
+- Frontend/admin changes

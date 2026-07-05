@@ -50,6 +50,7 @@ model RefreshToken {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash  String    @unique
   deviceName String?
+  deviceType String?
   userAgent  String?
   ipAddress  String?
   expiresAt  DateTime
