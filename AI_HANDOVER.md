@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3 implementation is complete, but the live Prisma migration application is blocked by a schema engine/database reachability error.
+Authentication Module Task 3.3 and User/Profile Tasks 4.1-4.4 are complete.
 
 The NestJS app now starts with:
 
@@ -28,7 +28,12 @@ The NestJS app now starts with:
 - JWT access token signing,
 - opaque refresh token generation,
 - SHA-256 refresh token hash storage,
-- multi-device login support through one `RefreshToken` row per login.
+- multi-device login support through one `RefreshToken` row per login,
+- JWT auth guard,
+- `@CurrentUser()` decorator,
+- current user endpoint at `GET /api/v1/me`,
+- basic profile update endpoint at `PATCH /api/v1/me/profile`,
+- password change endpoint at `PATCH /api/v1/me/password`.
 
 Current Prisma schema contains:
 
@@ -39,11 +44,14 @@ Current Prisma schema contains:
 
 `FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
-Pending Prisma schema change:
+No UserProfile Prisma model has been added yet. User/Profile Tasks 4.1-4.4 required no Prisma schema changes and no migrations.
+
+Latest Prisma schema change:
 
 - `RefreshToken.deviceType String?`
 - Migration file: `20260705170000_auth_3_3_login_device_type`
-- `npx prisma migrate dev --name auth_3_3_login_device_type` failed with `Error: Schema engine error:` against the configured Supabase database, so the live DB may not have the `deviceType` column yet.
+- Migration was applied successfully after switching to the Supabase Session Pooler connection string.
+- `npx prisma migrate status` reports the database schema is up to date.
 
 ## Decisions Used
 
@@ -63,14 +71,15 @@ Pending Prisma schema change:
 
 ## Next Recommended Task
 
-Resolve/apply the pending Prisma migration, then plan the refresh endpoint and token rotation slice.
+Plan the next MVP backend module. User/Profile MVP backend scope is complete unless timezone/language or a separate UserProfile model is required for onboarding/personalization.
 
 ## Guardrails
 
 - Signup currently creates a user only; login issues JWT access tokens and opaque refresh tokens.
-- Do not add refresh endpoint, logout, refresh token rotation, auth guards, protected routes, Google OAuth, password reset, email verification, WhatsApp, admin, or business modules unless explicitly approved.
+- Do not add refresh endpoint, logout, refresh token rotation, Google OAuth, password reset, email verification, WhatsApp, admin, or business modules unless explicitly approved.
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
+- Add rate limiting/brute-force protection before public beta.
 
 ## Auth Notes
 
@@ -85,10 +94,29 @@ Resolve/apply the pending Prisma migration, then plan the refresh endpoint and t
 - Refresh token expiry is `JWT_REFRESH_EXPIRES_IN=30d`.
 - Refresh tokens are opaque random tokens; only SHA-256 hashes are stored.
 - Failed login paths use the generic message `Invalid email or password`.
+- `JwtAuthGuard` verifies the access token and re-checks the user is active and not deleted.
+- `@CurrentUser()` provides `userId`, `email`, and `status`.
+
+## User/Profile Notes
+
+- `GET /api/v1/me` returns safe current user data.
+- `PATCH /api/v1/me/profile` updates only `fullName` and `phone`.
+- `PATCH /api/v1/me/password` verifies the current password, stores only an Argon2id hash for the new password, and revokes existing active refresh tokens.
+- User/Profile responses do not include `passwordHash`.
+- No separate UserProfile model exists yet.
+- Add UserProfile only if onboarding/personalization requires fields like timezone or preferredLanguage.
 
 ## Prisma Notes
 
 - Prisma CLI and Client are pinned to `6.19.3` because Prisma 7 requires a newer Node version than the current local runtime.
 - Migration applied: `20260703125907_foundation_2_2_prisma_setup`.
 - Migration applied: `20260703131635_auth_3_1_user_refresh_token`.
-- Migration created but not applied from this environment: `20260705170000_auth_3_3_login_device_type`.
+- Migration applied: `20260705170000_auth_3_3_login_device_type`.
+
+## Validation Notes
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed.
+- `npm run test:e2e` passed.
+- No current blocker remains from Authentication or User/Profile Tasks 4.1-4.4.

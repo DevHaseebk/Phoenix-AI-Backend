@@ -1,33 +1,39 @@
 # Current Task
 
-Task: Authentication Module 3.3
+Task: User/Profile Module 4.1-4.4
 
-Status: Implementation completed; live migration application blocked by Prisma schema engine/database reachability error
+Status: Completed
 
 Scope:
 
-- POST `/api/v1/auth/login`
-- Login DTO using `email`, `password`, and optional `device`
-- JWT access token signing
-- Opaque refresh token generation
-- SHA-256 refresh token hash storage
-- `RefreshToken.deviceType` Prisma schema field and migration SQL
-- `User.lastActiveAt` update on login
-- Multi-device login support by creating one `RefreshToken` row per login
-- Login unit and e2e tests
+- Task 4.1 JWT Auth Guard and `@CurrentUser()` decorator
+- Task 4.2 `GET /api/v1/me`
+- Task 4.3 `PATCH /api/v1/me/profile`
+- Task 4.4 `PATCH /api/v1/me/password`
+- Current authenticated user context with `userId`, `email`, and `status`
+- Safe current user response shape without `passwordHash`
+- Basic profile update for `fullName` and `phone`
+- Password change with Argon2 verification and Argon2id hashing
+- Password change revokes existing active refresh tokens
+- No UserProfile Prisma model added
+- No Prisma schema changes or migrations made for User/Profile
+- Validation passed:
+  - lint
+  - build
+  - unit tests
+  - e2e tests
 
 Out of scope:
 
 - Refresh endpoint
 - Token rotation
 - Logout
-- Auth guards
-- Protected routes
 - Google OAuth
 - Password reset
 - Email verification
+- Rate limiting/brute-force protection before public beta
+- Separate UserProfile model unless onboarding/personalization requires timezone or preferredLanguage
 - WhatsApp
-- User profile
 - Admin
 - Frontend/admin changes
 - Business features

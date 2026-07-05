@@ -284,7 +284,10 @@ npm run test:e2e
 
 - `npx prisma validate` passed.
 - `npx prisma generate` passed.
-- `npx prisma migrate dev --name auth_3_3_login_device_type` failed with `Error: Schema engine error:` against the configured Supabase database.
+- Initial `npx prisma migrate dev --name auth_3_3_login_device_type` failed with `Error: Schema engine error:` against the direct Supabase database host.
+- The migration issue was resolved by using the Supabase Session Pooler connection string from `.env`.
+- `npx prisma migrate dev --name auth_3_3_login_device_type` then applied migration `20260705170000_auth_3_3_login_device_type` successfully.
+- `npx prisma migrate status` reports the database schema is up to date.
 - `npm run lint` passed.
 - `npm run build` passed.
 - `npm run test` passed.
@@ -295,9 +298,59 @@ npm run test:e2e
 - Refresh endpoint
 - Logout
 - Token rotation
-- Auth guards
-- Protected routes
 - Google OAuth
 - Password reset
 - Email verification
+- Rate limiting/brute-force protection before public beta
 - Frontend/admin changes
+
+## 2026-07-05 - User/Profile Tasks 4.1-4.4
+
+### What changed
+
+- Added JWT Auth Guard.
+- Added `@CurrentUser()` decorator.
+- Added authenticated user context type containing:
+  - `userId`
+  - `email`
+  - `status`
+- Added `GET /api/v1/me`.
+- Added `PATCH /api/v1/me/profile`.
+- Added `PATCH /api/v1/me/password`.
+- Added Users module/controller/service.
+- Added safe current user response shape.
+- Added basic profile update for:
+  - `fullName`
+  - `phone`
+- Added password change using:
+  - Argon2 verify for current password,
+  - Argon2id hashing for new password.
+- Password change revokes existing active refresh tokens by setting `revokedAt`.
+- Added unit and e2e tests for guard/decorator and User/Profile endpoints.
+
+### Prisma
+
+- No Prisma schema changes were made for User/Profile Tasks 4.1-4.4.
+- No migrations were created or run for User/Profile Tasks 4.1-4.4.
+- No UserProfile Prisma model has been added.
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed.
+- `npm run test:e2e` passed.
+
+### Current status
+
+- User/Profile MVP backend scope is complete unless timezone/language or a separate UserProfile model is required for onboarding/personalization.
+
+### Intentionally not implemented
+
+- Refresh endpoint
+- Logout
+- Password reset
+- Google OAuth
+- Rate limiting/brute-force protection before public beta
+- Separate UserProfile model
+- Timezone/preferredLanguage profile fields

@@ -24,11 +24,18 @@
 | Signup API | Complete | `POST /api/v1/auth/signup`, email/password only |
 | Password hashing | Complete | Argon2id via `argon2` |
 | Duplicate email handling | Complete | Normalized email pre-check plus Prisma unique constraint handling |
-| Login API | Complete in code | `POST /api/v1/auth/login` |
-| JWT access token signing | Complete in code | 15 minute access token expiry from env |
-| Refresh token creation | Complete in code | Opaque random token, SHA-256 hash stored only |
-| Multi-device login | Complete in code | One `RefreshToken` row per successful login |
-| RefreshToken deviceType schema | Migration file created; DB apply blocked | `prisma migrate dev` fails with Prisma schema engine error against Supabase |
+| Login API | Complete | `POST /api/v1/auth/login` |
+| JWT access token signing | Complete | 15 minute access token expiry from env |
+| Refresh token creation | Complete | Opaque random token, SHA-256 hash stored only |
+| Multi-device login | Complete | One `RefreshToken` row per successful login |
+| RefreshToken deviceType schema | Complete | Migration `20260705170000_auth_3_3_login_device_type` applied via Supabase Session Pooler |
+| Database schema status | Complete | `npx prisma migrate status` reports schema is up to date |
+| JWT auth guard | Complete | Verifies access token and re-checks active, non-deleted user |
+| Current user decorator | Complete | Provides `userId`, `email`, and `status` from authenticated request context |
+| Get current user | Complete | `GET /api/v1/me` |
+| Update own basic profile | Complete | `PATCH /api/v1/me/profile`, supports `fullName` and `phone` |
+| Change own password | Complete | `PATCH /api/v1/me/password`, verifies current password and revokes active refresh tokens |
+| User/Profile Prisma changes | Not needed for MVP scope | No UserProfile model, schema change, or migration added for Tasks 4.1-4.4 |
 
 ## Not Started
 
@@ -36,12 +43,13 @@
 |---|---|---|
 | Refresh endpoint | Not started | Explicitly out of scope for Task 3.3 |
 | Token rotation | Not started | Explicitly out of scope for Task 3.3 |
-| Auth guards/protected routes | Not started | Explicitly out of scope for Task 3.3 |
 | Logout API | Not started | Future auth implementation task |
 | Google OAuth | Not started | Future auth implementation task |
 | Password reset | Not started | Future auth implementation task |
 | Email verification | Not started | Future auth implementation task |
-| User profile/product models | Not started | Future schema task |
+| Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
+| UserProfile model | Optional future | Add only if onboarding/personalization requires fields like timezone or preferredLanguage |
+| Product models | Not started | Future schema task |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |
