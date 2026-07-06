@@ -76,6 +76,34 @@ enum ExerciseType {
   OTHER
 }
 
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
+  CUSTOM
+}
+
+enum MealLogSource {
+  MANUAL
+  AI_CHAT
+  WHATSAPP
+  IMPORTED
+}
+
+enum MealLogStatus {
+  LOGGED
+  ESTIMATED
+  NEEDS_REVIEW
+}
+
+enum ConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+  VERIFIED
+}
+
 model FoundationMigrationCheck {
   id        String   @id @default(uuid())
   label     String   @unique
@@ -100,6 +128,7 @@ model User {
   weightLogs      WeightLog[]
   waterLogs       WaterLog[]
   exerciseLogs    ExerciseLog[]
+  mealLogs        MealLog[]
   refreshTokens   RefreshToken[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
@@ -201,6 +230,51 @@ model ExerciseLog {
   @@index([loggedAt])
   @@index([userId, loggedAt])
   @@map("exercise_logs")
+}
+
+model MealLog {
+  id                String          @id @default(uuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mealType          MealType
+  loggedAt          DateTime
+  source            MealLogSource   @default(MANUAL)
+  status            MealLogStatus   @default(LOGGED)
+  confidenceLevel   ConfidenceLevel @default(VERIFIED)
+  description       String?
+  note              String?
+  totalCalories     Decimal
+  totalProteinGrams Decimal
+  totalCarbsGrams   Decimal?
+  totalFatGrams     Decimal?
+  items             MealLogItem[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([loggedAt])
+  @@index([mealType])
+  @@index([userId, loggedAt])
+  @@map("meal_logs")
+}
+
+model MealLogItem {
+  id              String          @id @default(uuid())
+  mealLogId       String
+  mealLog         MealLog         @relation(fields: [mealLogId], references: [id], onDelete: Cascade)
+  foodName        String
+  portionLabel    String?
+  quantity        Decimal?
+  calories        Decimal
+  proteinGrams    Decimal
+  carbsGrams      Decimal?
+  fatGrams        Decimal?
+  confidenceLevel ConfidenceLevel @default(VERIFIED)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([mealLogId])
+  @@map("meal_log_items")
 }
 
 model RefreshToken {

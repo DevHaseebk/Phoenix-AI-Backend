@@ -413,7 +413,7 @@ npx prisma migrate status
 - AI provider logic
 - WhatsApp webhook
 - Admin modules
-- Water, exercise, or meal logging models at that time; WaterLog was later added by Core Logs Tasks 7.3-7.4
+- Water, exercise, or meal logging models at that time; WaterLog, ExerciseLog, and MealLog were later added by Core Logs Tasks 7.3-8.4
 
 ## 2026-07-06 - Core Logs WeightLog Tasks 7.1-7.2
 
@@ -462,9 +462,8 @@ npx prisma migrate status
   - 5 suites
   - 29 tests
 
-### Intentionally not implemented
+### Intentionally not implemented at that time
 
-- MealLog
 - Dashboard
 - AI provider logic
 - WhatsApp webhook
@@ -527,9 +526,8 @@ npx prisma migrate status
   - 7 suites
   - 40 tests
 
-### Intentionally not implemented
+### Intentionally not implemented at that time
 
-- MealLog
 - Dashboard
 - AI provider logic
 - WhatsApp webhook
@@ -580,11 +578,91 @@ npx prisma migrate status
   - 6 suites
   - 34 tests
 
-### Intentionally not implemented
+### Intentionally not implemented at that time
 
-- ExerciseLog
-- MealLog
 - Dashboard
 - AI provider logic
+- WhatsApp webhook
+- Admin modules
+
+## 2026-07-06 - Core Logs MealLog Tasks 8.2-8.4
+
+### What changed
+
+- Added `MealType` enum:
+  - `BREAKFAST`
+  - `LUNCH`
+  - `DINNER`
+  - `SNACK`
+  - `CUSTOM`
+- Added `MealLogSource` enum:
+  - `MANUAL`
+  - `AI_CHAT`
+  - `WHATSAPP`
+  - `IMPORTED`
+- Added `MealLogStatus` enum:
+  - `LOGGED`
+  - `ESTIMATED`
+  - `NEEDS_REVIEW`
+- Added `ConfidenceLevel` enum:
+  - `LOW`
+  - `MEDIUM`
+  - `HIGH`
+  - `VERIFIED`
+- Added `MealLog` Prisma model.
+- Added `MealLogItem` Prisma model.
+- Added `User.mealLogs` relation.
+- Added MealLog indexes:
+  - `userId`
+  - `loggedAt`
+  - `mealType`
+  - `userId + loggedAt`
+- Added MealLogItem index:
+  - `mealLogId`
+- Created and applied Prisma migration:
+  - `20260706123309_meal_log`
+- Added MealLog service/controller/DTOs.
+- Added protected MealLog endpoints:
+  - `POST /api/v1/logs/meals`
+  - `GET /api/v1/logs/meals`
+  - `GET /api/v1/logs/meals/:id`
+  - `PATCH /api/v1/logs/meals/:id`
+  - `DELETE /api/v1/logs/meals/:id`
+- All MealLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `POST /api/v1/logs/meals` creates meals for the authenticated user only.
+- `GET /api/v1/logs/meals` lists meals for the authenticated user only.
+- `GET /api/v1/logs/meals/:id` enforces ownership.
+- `PATCH /api/v1/logs/meals/:id` enforces ownership, supports meal field updates, supports item replacement, and recalculates totals from items.
+- `DELETE /api/v1/logs/meals/:id` enforces ownership and uses hard delete for MVP because schema has no `deletedAt`.
+- MealLogItem rows are created and returned correctly.
+- Decimal-backed totals and item fields are safely serialized as plain numbers.
+- Dashboard summaries and profile fields are not updated by MealLog APIs yet.
+
+### Prisma commands executed
+
+```bash
+npx prisma format
+npx prisma migrate status
+npx prisma migrate dev --name meal_log
+npx prisma generate
+npx prisma migrate status
+```
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 17 suites
+  - 69 tests
+- `npm run test:e2e` passed:
+  - 8 suites
+  - 54 tests
+
+### Intentionally not implemented
+
+- Dashboard
+- AI provider logic
+- Food Engine
 - WhatsApp webhook
 - Admin modules

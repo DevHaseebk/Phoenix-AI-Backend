@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, and Core Logs ExerciseLog Tasks 7.5-7.6 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, Core Logs ExerciseLog Tasks 7.5-7.6, and Core Logs MealLog Tasks 8.2-8.4 are complete.
 
 The NestJS app now starts with:
 
@@ -57,7 +57,19 @@ The NestJS app now starts with:
 - `ExerciseType` enum,
 - `User.exerciseLogs` relation,
 - exercise log endpoint at `GET /api/v1/logs/exercise`,
-- exercise log endpoint at `POST /api/v1/logs/exercise`.
+- exercise log endpoint at `POST /api/v1/logs/exercise`,
+- `MealLog` Prisma model,
+- `MealLogItem` Prisma model,
+- `MealType` enum,
+- `MealLogSource` enum,
+- `MealLogStatus` enum,
+- `ConfidenceLevel` enum,
+- `User.mealLogs` relation,
+- meal log endpoint at `POST /api/v1/logs/meals`,
+- meal log endpoint at `GET /api/v1/logs/meals`,
+- meal log endpoint at `GET /api/v1/logs/meals/:id`,
+- meal log endpoint at `PATCH /api/v1/logs/meals/:id`,
+- meal log endpoint at `DELETE /api/v1/logs/meals/:id`.
 
 Current Prisma schema contains:
 
@@ -79,6 +91,12 @@ Current Prisma schema contains:
 - `ExerciseLog`
 - `ExerciseLogSource`
 - `ExerciseType`
+- `MealLog`
+- `MealLogItem`
+- `MealType`
+- `MealLogSource`
+- `MealLogStatus`
+- `ConfidenceLevel`
 
 `FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
@@ -86,11 +104,14 @@ User/Profile Tasks 4.1-4.4 required no Prisma schema changes and no migrations. 
 
 Latest Prisma schema change:
 
-- `ExerciseLog`
-- `ExerciseLogSource`
-- `ExerciseType`
-- `User.exerciseLogs`
-- Migration file: `20260706114403_exercise_log`
+- `MealLog`
+- `MealLogItem`
+- `MealType`
+- `MealLogSource`
+- `MealLogStatus`
+- `ConfidenceLevel`
+- `User.mealLogs`
+- Migration file: `20260706123309_meal_log`
 - Migration was applied successfully.
 - `npx prisma migrate status` reports the database schema is up to date.
 
@@ -112,7 +133,7 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Implement the next Core Logs slice before Dashboard: MealLog/Food logging schema planning.
+Implement the Dashboard module planning/build next, using completed WeightLog, WaterLog, ExerciseLog, and MealLog data.
 
 ## Guardrails
 
@@ -121,8 +142,8 @@ Implement the next Core Logs slice before Dashboard: MealLog/Food logging schema
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
-- Do not add Dashboard, MealLog, AI, WhatsApp, or Admin modules until explicitly approved.
-- Logs module currently contains WeightLog, WaterLog, and ExerciseLog only; do not add MealLog unless explicitly approved.
+- Do not add Dashboard, AI, WhatsApp, or Admin modules until explicitly approved.
+- Logs module currently contains WeightLog, WaterLog, ExerciseLog, and MealLog.
 
 ## Auth Notes
 
@@ -185,6 +206,22 @@ Implement the next Core Logs slice before Dashboard: MealLog/Food logging schema
 - ExerciseLog safe responses include `id`, `exerciseType`, `durationMinutes`, `steps`, `distanceKm`, `estimatedCaloriesBurned`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
 - `distanceKm` Decimal is serialized as a plain number.
 - Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
+- `POST /api/v1/logs/meals` creates a meal log for the authenticated user only.
+- `GET /api/v1/logs/meals` lists the authenticated user's meal logs only.
+- `GET /api/v1/logs/meals/:id` returns one authenticated-user-owned meal log only.
+- `PATCH /api/v1/logs/meals/:id` updates one authenticated-user-owned meal log only.
+- `DELETE /api/v1/logs/meals/:id` hard deletes one authenticated-user-owned meal log for MVP because schema has no `deletedAt`.
+- All MealLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `MealType` values are `BREAKFAST`, `LUNCH`, `DINNER`, `SNACK`, and `CUSTOM`.
+- `MealLogSource` values are `MANUAL`, `AI_CHAT`, `WHATSAPP`, and `IMPORTED`.
+- `MealLogStatus` values are `LOGGED`, `ESTIMATED`, and `NEEDS_REVIEW`.
+- `ConfidenceLevel` values are `LOW`, `MEDIUM`, `HIGH`, and `VERIFIED`.
+- `source`, `status`, `confidenceLevel`, and meal totals are not client-controlled for MealLog APIs.
+- MealLog update supports meal field updates and item replacement; totals are recalculated from items when items are replaced.
+- MealLogItem rows are created and returned correctly.
+- MealLog safe responses include `id`, `mealType`, `description`, totals, `status`, `confidenceLevel`, `source`, `loggedAt`, `note`, `createdAt`, `updatedAt`, and `items`.
+- Decimal-backed MealLog totals and MealLogItem fields are serialized as plain numbers.
+- Dashboard summaries and profile fields are not updated by MealLog APIs yet.
 - `.gitignore` was fixed from `logs` to `/logs` so `src/logs` source files are not hidden from Git.
 - Manual Postman verification was completed successfully by the developer for implemented APIs.
 
@@ -198,11 +235,12 @@ Implement the next Core Logs slice before Dashboard: MealLog/Food logging schema
 - Migration applied: `20260706072703_weight_log`.
 - Migration applied: `20260706074733_water_log`.
 - Migration applied: `20260706114403_exercise_log`.
+- Migration applied: `20260706123309_meal_log`.
 
 ## Validation Notes
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed with 15 suites / 52 tests.
-- `npm run test:e2e` passed with 7 suites / 40 tests.
-- No current blocker remains from Authentication, User/Profile, Onboarding, or Core Logs Weight/Water/Exercise Tasks 7.1-7.6.
+- `npm run test` passed with 17 suites / 69 tests.
+- `npm run test:e2e` passed with 8 suites / 54 tests.
+- No current blocker remains from Authentication, User/Profile, Onboarding, or Core Logs Weight/Water/Exercise/Meal Tasks 7.1-8.4.

@@ -105,6 +105,38 @@
   - `npm run build`
   - `npm run test` with 15 suites / 52 tests
   - `npm run test:e2e` with 7 suites / 40 tests
+- Core Logs MealLog Tasks 8.2-8.4 are complete:
+  - `MealLog` model
+  - `MealLogItem` model
+  - `MealType` enum
+  - `MealLogSource` enum
+  - `MealLogStatus` enum
+  - `ConfidenceLevel` enum
+  - `User.mealLogs` relation
+  - `POST /api/v1/logs/meals`
+  - `GET /api/v1/logs/meals`
+  - `GET /api/v1/logs/meals/:id`
+  - `PATCH /api/v1/logs/meals/:id`
+  - `DELETE /api/v1/logs/meals/:id`
+- Migration `20260706123309_meal_log` is applied.
+- MealLog indexes are added:
+  - `userId`
+  - `loggedAt`
+  - `mealType`
+  - `userId + loggedAt`
+- MealLogItem index is added:
+  - `mealLogId`
+- MealLog routes are protected by `JwtAuthGuard` and use `@CurrentUser()`.
+- MealLog create/list/detail/update/delete operations are scoped to the current user.
+- MealLog update supports meal field updates and item replacement with totals recalculated from items.
+- MealLog delete uses hard delete for MVP because schema has no `deletedAt`.
+- MealLogItem rows are created and returned correctly.
+- Decimal-backed totals and item fields are safely serialized as plain numbers.
+- Core Logs MealLog Tasks 8.2-8.4 validation passed:
+  - `npm run lint`
+  - `npm run build`
+  - `npm run test` with 17 suites / 69 tests
+  - `npm run test:e2e` with 8 suites / 54 tests
 
 ## Deferred By Scope
 
@@ -113,5 +145,5 @@
 - `UserProfile.currentWeightKg` synchronization from WeightLog is deferred until dashboard/current-weight rules are defined.
 - Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
 - Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
+- Dashboard summaries and profile fields are not updated by MealLog APIs yet.
 - Dashboard, AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
-- Meal logging models/APIs are intentionally deferred.

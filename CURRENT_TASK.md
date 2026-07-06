@@ -1,55 +1,76 @@
 # Current Task
 
-Task: Core Logs ExerciseLog 7.5-7.6
+Task: Core Logs MealLog 8.2-8.4
 
 Status: Completed
 
 Scope:
 
-- Task 7.5 ExerciseLog Prisma schema and migration
-- Task 7.6 ExerciseLog service/controller/DTOs
-- Migration `20260706114403_exercise_log` applied
-- `ExerciseLog` Prisma model added
-- `ExerciseLogSource` enum added:
+- Task 8.2 MealLog Prisma schema and migration
+- Task 8.3 MealLog create/list APIs
+- Task 8.4 MealLog get/update/delete APIs
+- Migration `20260706123309_meal_log` applied
+- `MealLog` Prisma model added
+- `MealLogItem` Prisma model added
+- `MealType` enum added:
+  - `BREAKFAST`
+  - `LUNCH`
+  - `DINNER`
+  - `SNACK`
+  - `CUSTOM`
+- `MealLogSource` enum added:
   - `MANUAL`
-  - `DEVICE`
+  - `AI_CHAT`
+  - `WHATSAPP`
   - `IMPORTED`
-- `ExerciseType` enum added:
-  - `WALKING`
-  - `RUNNING`
-  - `CYCLING`
-  - `STRENGTH`
-  - `CARDIO`
-  - `SPORTS`
-  - `STEPS`
-  - `OTHER`
-- `User.exerciseLogs` relation added
-- ExerciseLog indexes added:
+- `MealLogStatus` enum added:
+  - `LOGGED`
+  - `ESTIMATED`
+  - `NEEDS_REVIEW`
+- `ConfidenceLevel` enum added:
+  - `LOW`
+  - `MEDIUM`
+  - `HIGH`
+  - `VERIFIED`
+- `User.mealLogs` relation added
+- MealLog indexes added:
   - `userId`
   - `loggedAt`
+  - `mealType`
   - `userId + loggedAt`
-- ExerciseLog endpoints complete:
-  - `GET /api/v1/logs/exercise`
-  - `POST /api/v1/logs/exercise`
-- Both routes are protected by `JwtAuthGuard` and use `@CurrentUser()`
-- `POST /api/v1/logs/exercise` creates exercise logs for the current user only
-- `GET /api/v1/logs/exercise` lists the current user's exercise logs only
-- `GET /api/v1/logs/exercise` supports `exerciseType` filter
-- `distanceKm` Decimal is safely serialized as a plain number
-- Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet
-- Manual Postman verification was completed successfully by the developer for implemented APIs
-- WeightLog, WaterLog, and ExerciseLog are complete
+- MealLogItem index added:
+  - `mealLogId`
+- MealLog endpoints complete:
+  - `POST /api/v1/logs/meals`
+  - `GET /api/v1/logs/meals`
+  - `GET /api/v1/logs/meals/:id`
+  - `PATCH /api/v1/logs/meals/:id`
+  - `DELETE /api/v1/logs/meals/:id`
+- All MealLog routes are protected by `JwtAuthGuard` and use `@CurrentUser()`
+- `POST /api/v1/logs/meals` creates meals for the current user only
+- `GET /api/v1/logs/meals` lists the current user's meals only
+- `GET /api/v1/logs/meals/:id` enforces ownership
+- `PATCH /api/v1/logs/meals/:id` enforces ownership, updates meal fields, supports item replacement, and recalculates totals from items
+- `DELETE /api/v1/logs/meals/:id` enforces ownership and uses hard delete for MVP because schema has no `deletedAt`
+- MealLogItem rows are created and returned correctly
+- Decimal-backed totals and item fields are serialized as plain numbers
+- Dashboard summaries and profile fields are not updated by MealLog APIs yet
+- Core Logs are complete:
+  - WeightLog
+  - WaterLog
+  - ExerciseLog
+  - MealLog
 - Validation passed:
   - lint
   - build
-  - unit tests: 15 suites / 52 tests
-  - e2e tests: 7 suites / 40 tests
+  - unit tests: 17 suites / 69 tests
+  - e2e tests: 8 suites / 54 tests
 
 Out of scope:
 
-- MealLog
 - Dashboard
 - AI
+- Food Engine
 - WhatsApp
 - Admin
 - Refresh endpoint

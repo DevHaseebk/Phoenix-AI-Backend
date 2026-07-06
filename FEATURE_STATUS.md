@@ -60,11 +60,22 @@
 | ExerciseLog schema | Complete | Added `ExerciseLog`, `ExerciseLogSource`, `ExerciseType`, and `User.exerciseLogs` relation |
 | ExerciseLog migration | Complete | Migration `20260706114403_exercise_log` applied |
 | ExerciseLog indexes | Complete | Added `userId`, `loggedAt`, and `userId + loggedAt` indexes |
-| Logs module | Partial | WeightLog, WaterLog, and ExerciseLog implemented only |
+| Logs module | Complete | WeightLog, WaterLog, ExerciseLog, and MealLog implemented |
 | ExerciseLog create API | Complete | `POST /api/v1/logs/exercise`, protected by JWT auth, current user only |
 | ExerciseLog list API | Complete | `GET /api/v1/logs/exercise`, protected by JWT auth, current user only; supports `exerciseType` filter |
 | ExerciseLog distance serialization | Complete | `distanceKm` Decimal is returned as a plain number |
 | ExerciseLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
+| MealLog schema | Complete | Added `MealLog`, `MealLogItem`, meal enums, `ConfidenceLevel`, and `User.mealLogs` relation |
+| MealLog migration | Complete | Migration `20260706123309_meal_log` applied |
+| MealLog indexes | Complete | Added `MealLog` indexes for `userId`, `loggedAt`, `mealType`, `userId + loggedAt`; added `MealLogItem.mealLogId` index |
+| MealLog create API | Complete | `POST /api/v1/logs/meals`, protected by JWT auth, current user only |
+| MealLog list API | Complete | `GET /api/v1/logs/meals`, protected by JWT auth, current user only |
+| MealLog detail API | Complete | `GET /api/v1/logs/meals/:id`, ownership enforced |
+| MealLog update API | Complete | `PATCH /api/v1/logs/meals/:id`, ownership enforced, supports field updates and item replacement with recalculated totals |
+| MealLog delete API | Complete | `DELETE /api/v1/logs/meals/:id`, ownership enforced, hard delete for MVP |
+| MealLog item responses | Complete | `MealLogItem` rows are created and returned correctly |
+| MealLog decimal serialization | Complete | Decimal-backed totals and item fields are returned as plain numbers |
+| MealLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
 | Postman manual verification | Complete | Developer manually verified implemented APIs with Postman |
 
 ## Not Started
@@ -79,7 +90,6 @@
 | Email verification | Not started | Future auth implementation task |
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
 | Dashboard module | Not started | Future MVP module |
-| MealLog model/API | Not started | Future core logs task |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |
