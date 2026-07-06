@@ -1,11 +1,31 @@
 # Current Task
 
-Task: Dashboard Tasks 9.2-9.3
+Task: Auth Session Tasks 10.1-10.2
 
 Status: Completed
 
 Scope:
 
+- Auth refresh endpoint is implemented.
+- `POST /api/v1/auth/refresh` accepts `refreshToken` in the request body.
+- Refresh hashes opaque refresh tokens using the existing SHA-256 pattern.
+- Refresh rejects missing, unknown, revoked, or expired tokens with generic `Unauthorized`.
+- Refresh rejects missing, inactive, or deleted users.
+- Refresh returns a new `accessToken` and `expiresIn`.
+- Refresh token rotation is deferred.
+- Auth logout endpoint is implemented.
+- `POST /api/v1/auth/logout` accepts `refreshToken` in the request body.
+- Logout revokes matching refresh tokens by setting `revokedAt`.
+- Logout is idempotent:
+  - valid token returns success
+  - already revoked token returns success
+  - unknown token returns success
+- Logout does not require an access token.
+- Logout does not delete refresh token rows.
+- Frontend session flow is ready:
+  - login gets `accessToken` and `refreshToken`
+  - refresh renews `accessToken`
+  - logout revokes `refreshToken`
 - Dashboard module is implemented.
 - `GET /api/v1/dashboard/today` is complete.
 - `GET /api/v1/dashboard/summary` is complete.
@@ -47,8 +67,9 @@ Scope:
 - Validation passed:
   - lint
   - build
-  - unit tests: 20 suites / 85 tests
-  - e2e tests: 9 suites / 65 tests
+  - unit tests: 20 suites / 93 tests
+  - e2e tests: 9 suites / 76 tests
+- First parallel test run had Argon2-related timeout pressure, but the required suites passed when rerun sequentially.
 
 Out of scope:
 
@@ -56,12 +77,12 @@ Out of scope:
 - Food Engine
 - WhatsApp
 - Admin
-- Refresh endpoint
 - Token rotation
-- Logout
 - Google OAuth
 - Password reset
 - Email verification
 - Rate limiting/brute-force protection before public beta
+- Security headers / Helmet if not already implemented
+- Production CORS allowlist verification
 - Frontend/admin changes
 - Other business features

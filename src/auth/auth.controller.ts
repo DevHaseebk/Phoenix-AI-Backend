@@ -11,6 +11,7 @@ import type { Request } from 'express';
 import { successResponse } from '../common/responses/response.helper';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { SignupDto } from './dto/signup.dto';
 
 @ApiTags('Auth')
@@ -36,5 +37,25 @@ export class AuthController {
     });
 
     return successResponse(data, 'Logged in successfully', {});
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ description: 'Token refreshed successfully' })
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
+    const data = await this.authService.refreshAccessToken(
+      refreshTokenDto.refreshToken,
+    );
+
+    return successResponse(data, 'Token refreshed successfully', {});
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ description: 'Logged out successfully' })
+  async logout(@Body() refreshTokenDto: RefreshTokenDto) {
+    await this.authService.logout(refreshTokenDto.refreshToken);
+
+    return successResponse(null, 'Logged out successfully', {});
   }
 }

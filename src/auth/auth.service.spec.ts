@@ -1,6 +1,7 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +12,8 @@ describe('AuthService', () => {
   const userCreate = jest.fn();
   const userUpdate = jest.fn();
   const refreshTokenCreate = jest.fn();
+  const refreshTokenFindUnique = jest.fn();
+  const refreshTokenUpdate = jest.fn();
   const prisma = {
     user: {
       findUnique,
@@ -19,6 +22,8 @@ describe('AuthService', () => {
     },
     refreshToken: {
       create: refreshTokenCreate,
+      findUnique: refreshTokenFindUnique,
+      update: refreshTokenUpdate,
     },
   } as unknown as PrismaService;
   const signAsync = jest.fn();
@@ -233,5 +238,201 @@ describe('AuthService', () => {
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(refreshTokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('refreshes an access token with a valid opaque refresh token', async () => {
+    refreshTokenFindUnique.mockResolvedValue({
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: {
+        id: 'user-id',
+        email: 'haseeb@example.com',
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      },
+    });
+    signAsync.mockResolvedValue('new-access-token');
+
+    const service = new AuthService(prisma, jwtService, config);
+    const response = await service.refreshAccessToken('opaque-refresh-token');
+
+    expect(refreshTokenFindUnique).toHaveBeenCalledWith({
+      where: {
+        tokenHash: createHash('sha256')
+          .update('opaque-refresh-token')
+          .digest('hex'),
+      },
+      select: {
+        expiresAt: true,
+        revokedAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+    expect(signAsync).toHaveBeenCalledWith(
+      {
+        sub: 'user-id',
+        email: 'haseeb@example.com',
+        status: UserStatus.ACTIVE,
+      },
+      {
+        secret: 'test-access-secret',
+        expiresIn: '15m',
+      },
+    );
+    expect(response).toEqual({
+      accessToken: 'new-access-token',
+      expiresIn: 900,
+    });
+    expect(response).not.toHaveProperty('refreshToken');
+    expect(response).not.toHaveProperty('tokenHash');
+    expect(response).not.toHaveProperty('passwordHash');
+  });
+
+  it('rejects missing or unknown refresh tokens', async () => {
+    refreshTokenFindUnique.mockResolvedValue(null);
+
+    const service = new AuthService(prisma, jwtService, config);
+
+    await expect(service.refreshAccessToken('')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects revoked refresh tokens', async () => {
+    refreshTokenFindUnique.mockResolvedValue({
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: new Date(),
+      user: {
+        id: 'user-id',
+        email: 'haseeb@example.com',
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      },
+    });
+
+    const service = new AuthService(prisma, jwtService, config);
+
+    await expect(
+      service.refreshAccessToken('revoked-refresh-token'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired refresh tokens', async () => {
+    refreshTokenFindUnique.mockResolvedValue({
+      expiresAt: new Date(Date.now() - 60_000),
+      revokedAt: null,
+      user: {
+        id: 'user-id',
+        email: 'haseeb@example.com',
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      },
+    });
+
+    const service = new AuthService(prisma, jwtService, config);
+
+    await expect(
+      service.refreshAccessToken('expired-refresh-token'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects refresh tokens for inactive or deleted users', async () => {
+    const service = new AuthService(prisma, jwtService, config);
+
+    refreshTokenFindUnique.mockResolvedValueOnce({
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: {
+        id: 'user-id',
+        email: 'haseeb@example.com',
+        status: UserStatus.SUSPENDED,
+        deletedAt: null,
+      },
+    });
+    await expect(
+      service.refreshAccessToken('inactive-user-refresh-token'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    refreshTokenFindUnique.mockResolvedValueOnce({
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: {
+        id: 'user-id',
+        email: 'haseeb@example.com',
+        status: UserStatus.ACTIVE,
+        deletedAt: new Date(),
+      },
+    });
+    await expect(
+      service.refreshAccessToken('deleted-user-refresh-token'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(signAsync).not.toHaveBeenCalled();
+  });
+
+  it('revokes a valid refresh token during logout', async () => {
+    refreshTokenFindUnique.mockResolvedValue({
+      id: 'refresh-token-id',
+      revokedAt: null,
+    });
+    refreshTokenUpdate.mockResolvedValue({
+      id: 'refresh-token-id',
+      revokedAt: new Date(),
+    });
+
+    const service = new AuthService(prisma, jwtService, config);
+    await expect(
+      service.logout('opaque-refresh-token'),
+    ).resolves.toBeUndefined();
+
+    expect(refreshTokenFindUnique).toHaveBeenCalledWith({
+      where: {
+        tokenHash: createHash('sha256')
+          .update('opaque-refresh-token')
+          .digest('hex'),
+      },
+      select: {
+        id: true,
+        revokedAt: true,
+      },
+    });
+    expect(refreshTokenUpdate).toHaveBeenCalledWith({
+      where: { id: 'refresh-token-id' },
+      data: { revokedAt: expect.any(Date) as Date },
+    });
+  });
+
+  it('returns success for already revoked refresh tokens during logout', async () => {
+    refreshTokenFindUnique.mockResolvedValue({
+      id: 'refresh-token-id',
+      revokedAt: new Date(),
+    });
+
+    const service = new AuthService(prisma, jwtService, config);
+    await expect(
+      service.logout('revoked-refresh-token'),
+    ).resolves.toBeUndefined();
+
+    expect(refreshTokenUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns success for unknown refresh tokens during logout', async () => {
+    refreshTokenFindUnique.mockResolvedValue(null);
+
+    const service = new AuthService(prisma, jwtService, config);
+    const response = await service.logout('unknown-refresh-token');
+
+    expect(response).toBeUndefined();
+    expect(refreshTokenUpdate).not.toHaveBeenCalled();
   });
 });

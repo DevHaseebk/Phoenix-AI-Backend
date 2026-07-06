@@ -28,6 +28,9 @@
 | JWT access token signing | Complete | 15 minute access token expiry from env |
 | Refresh token creation | Complete | Opaque random token, SHA-256 hash stored only |
 | Multi-device login | Complete | One `RefreshToken` row per successful login |
+| Refresh access token API | Complete | `POST /api/v1/auth/refresh`, body `refreshToken`, returns new `accessToken` and `expiresIn` |
+| Logout API | Complete | `POST /api/v1/auth/logout`, body `refreshToken`, idempotently sets `revokedAt` when token exists |
+| Frontend session flow | Complete | Login issues tokens; refresh renews access token; logout revokes refresh token |
 | RefreshToken deviceType schema | Complete | Migration `20260705170000_auth_3_3_login_device_type` applied via Supabase Session Pooler |
 | Database schema status | Complete | `npx prisma migrate status` reports schema is up to date |
 | JWT auth guard | Complete | Verifies access token and re-checks active, non-deleted user |
@@ -86,18 +89,19 @@
 | Dashboard placeholders | Complete | Deterministic `aiFocus`; `weeklyReview` and `rewardsPreview` placeholders; no AI call |
 | Dashboard decimal serialization | Complete | Decimal-backed values are returned as plain numbers |
 | Dashboard validation | Complete | Latest lint, build, unit, and e2e tests passed |
+| Auth session validation | Complete | Latest lint, build, unit tests, and e2e tests passed; first parallel run had Argon2 timeout pressure but sequential reruns passed |
 
 ## Not Started
 
 | Feature | Status | Notes |
 |---|---|---|
-| Refresh endpoint | Not started | Explicitly out of scope for Task 3.3 |
-| Token rotation | Not started | Explicitly out of scope for Task 3.3 |
-| Logout API | Not started | Future auth implementation task |
+| Refresh token rotation | Not started | Future auth hardening task; explicitly deferred in Task 10.1 |
 | Google OAuth | Not started | Future auth implementation task |
 | Password reset | Not started | Future auth implementation task |
 | Email verification | Not started | Future auth implementation task |
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
+| Security headers / Helmet | Not started | Future public-beta hardening if not already implemented |
+| Production CORS allowlist verification | Not started | Future deployment hardening |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |

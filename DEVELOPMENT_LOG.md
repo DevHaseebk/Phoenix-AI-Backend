@@ -293,10 +293,10 @@ npm run test:e2e
 - `npm run test` passed.
 - `npm run test:e2e` passed.
 
-### Intentionally not implemented
+### Intentionally not implemented at that time
 
-- Refresh endpoint
-- Logout
+- Refresh endpoint; later implemented by Auth Session Task 10.1
+- Logout; later implemented by Auth Session Task 10.2
 - Token rotation
 - Google OAuth
 - Password reset
@@ -345,10 +345,10 @@ npm run test:e2e
 
 - User/Profile MVP backend scope is complete unless timezone/language or a separate UserProfile model is required for onboarding/personalization.
 
-### Intentionally not implemented
+### Intentionally not implemented at that time
 
-- Refresh endpoint
-- Logout
+- Refresh endpoint; later implemented by Auth Session Task 10.1
+- Logout; later implemented by Auth Session Task 10.2
 - Password reset
 - Google OAuth
 - Rate limiting/brute-force protection before public beta
@@ -731,3 +731,55 @@ npx prisma migrate status
 - WhatsApp webhook
 - Admin modules
 - Public-beta auth hardening
+
+## 2026-07-06 - Auth Session Tasks 10.1-10.2
+
+### What changed
+
+- Added `POST /api/v1/auth/refresh`.
+- Refresh accepts opaque `refreshToken` in the request body.
+- Refresh hashes the incoming token using the existing SHA-256 refresh-token hash pattern.
+- Refresh rejects missing, unknown, revoked, or expired refresh tokens with generic `Unauthorized`.
+- Refresh rejects missing, inactive, or deleted users.
+- Refresh returns a new `accessToken` and `expiresIn`.
+- Refresh token rotation is deferred.
+- Added `POST /api/v1/auth/logout`.
+- Logout accepts opaque `refreshToken` in the request body.
+- Logout revokes a matching refresh token by setting `revokedAt`.
+- Logout is idempotent:
+  - valid token returns success,
+  - already revoked token returns success,
+  - unknown token returns success.
+- Logout does not require an access token.
+- Logout does not delete refresh token rows.
+- Frontend session flow is now ready:
+  - login gets `accessToken` and `refreshToken`,
+  - refresh renews `accessToken`,
+  - logout revokes `refreshToken`.
+
+### Prisma
+
+- No Prisma schema changes were made for Auth Session Tasks 10.1-10.2.
+- No migrations were created or run for Auth Session Tasks 10.1-10.2.
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 20 suites
+  - 93 tests
+- `npm run test:e2e` passed:
+  - 9 suites
+  - 76 tests
+- First parallel test run had Argon2-related timeout pressure, but the required suites passed when rerun sequentially.
+
+### Intentionally not implemented
+
+- Refresh token rotation
+- Password reset
+- Google OAuth
+- Email verification
+- Rate limiting/brute-force protection before public beta
+- Security headers / Helmet if not already implemented
+- Production CORS allowlist verification

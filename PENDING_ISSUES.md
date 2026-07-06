@@ -158,11 +158,28 @@
   - `npm run build`
   - `npm run test` with 20 suites / 85 tests
   - `npm run test:e2e` with 9 suites / 65 tests
+- Auth Session Tasks 10.1-10.2 are complete:
+  - `POST /api/v1/auth/refresh`
+  - `POST /api/v1/auth/logout`
+- Refresh accepts a body `refreshToken`, hashes it with the existing SHA-256 pattern, rejects unknown/revoked/expired tokens generically, and returns a new `accessToken` plus `expiresIn`.
+- Refresh token rotation is deferred.
+- Logout accepts a body `refreshToken`, revokes matching tokens with `revokedAt`, does not delete token rows, and is idempotent for valid, already revoked, and unknown tokens.
+- Frontend session flow is ready:
+  - login gets `accessToken` and `refreshToken`
+  - refresh renews `accessToken`
+  - logout revokes `refreshToken`
+- Auth Session Tasks 10.1-10.2 validation passed:
+  - `npm run lint`
+  - `npm run build`
+  - `npm run test` with 20 suites / 93 tests
+  - `npm run test:e2e` with 9 suites / 76 tests
+- First parallel test run had Argon2-related timeout pressure, but the required suites passed when rerun sequentially.
 
 ## Deferred By Scope
 
-- Refresh endpoint, token rotation, logout, Google OAuth, password reset, and email verification are intentionally deferred.
+- Refresh token rotation, Google OAuth, password reset, and email verification are intentionally deferred.
 - Rate limiting/brute-force protection is intentionally deferred as future security hardening before public beta.
+- Security headers / Helmet and production CORS allowlist verification are deferred as deployment/public-beta hardening.
 - `UserProfile.currentWeightKg` synchronization from WeightLog is deferred until dashboard/current-weight rules are defined.
 - Profile fields are not updated by WaterLog APIs yet.
 - Profile fields are not updated by ExerciseLog APIs yet.

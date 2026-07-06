@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, Core Logs ExerciseLog Tasks 7.5-7.6, Core Logs MealLog Tasks 8.2-8.4, and Dashboard Tasks 9.2-9.3 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, Core Logs ExerciseLog Tasks 7.5-7.6, Core Logs MealLog Tasks 8.2-8.4, Dashboard Tasks 9.2-9.3, and Auth Session Tasks 10.1-10.2 are complete.
 
 The NestJS app now starts with:
 
@@ -23,6 +23,8 @@ The NestJS app now starts with:
 - auth module/controller/service,
 - signup endpoint at `POST /api/v1/auth/signup`,
 - login endpoint at `POST /api/v1/auth/login`,
+- refresh endpoint at `POST /api/v1/auth/refresh`,
+- logout endpoint at `POST /api/v1/auth/logout`,
 - Argon2id password hashing,
 - duplicate email handling,
 - JWT access token signing,
@@ -136,12 +138,14 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Plan the next MVP backend module after Dashboard. AI provider integration is the likely next module if the product roadmap is continuing toward AI-first guidance; otherwise review the roadmap before coding.
+Start frontend/user app integration against the completed MVP backend APIs, unless the product roadmap requires backend AI provider planning first.
 
 ## Guardrails
 
 - Signup currently creates a user only; login issues JWT access tokens and opaque refresh tokens.
-- Do not add refresh endpoint, logout, refresh token rotation, Google OAuth, password reset, email verification, WhatsApp, admin, or additional business modules unless explicitly approved.
+- Refresh renews access tokens using a body `refreshToken`.
+- Logout revokes refresh tokens using a body `refreshToken`.
+- Do not add refresh token rotation, Google OAuth, password reset, email verification, WhatsApp, admin, or additional business modules unless explicitly approved.
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
@@ -160,6 +164,11 @@ Plan the next MVP backend module after Dashboard. AI provider integration is the
 - Access token expiry is `JWT_ACCESS_EXPIRES_IN=15m`.
 - Refresh token expiry is `JWT_REFRESH_EXPIRES_IN=30d`.
 - Refresh tokens are opaque random tokens; only SHA-256 hashes are stored.
+- `POST /api/v1/auth/refresh` accepts `refreshToken` in the body, hashes it with SHA-256, rejects missing/unknown/revoked/expired tokens generically, rejects missing/inactive/deleted users, and returns `accessToken` plus `expiresIn`.
+- Refresh token rotation is deferred.
+- `POST /api/v1/auth/logout` accepts `refreshToken` in the body, sets `revokedAt` for matching active tokens, and returns success for valid, already revoked, and unknown tokens.
+- Logout does not require an access token and does not delete refresh token rows.
+- Frontend session flow is ready: login gets tokens, refresh renews access token, logout revokes refresh token.
 - Failed login paths use the generic message `Invalid email or password`.
 - `JwtAuthGuard` verifies the access token and re-checks the user is active and not deleted.
 - `@CurrentUser()` provides `userId`, `email`, and `status`.
@@ -273,6 +282,7 @@ Plan the next MVP backend module after Dashboard. AI provider integration is the
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed with 20 suites / 85 tests.
-- `npm run test:e2e` passed with 9 suites / 65 tests.
-- No current blocker remains from Authentication, User/Profile, Onboarding, Core Logs Weight/Water/Exercise/Meal Tasks 7.1-8.4, or Dashboard Tasks 9.2-9.3.
+- `npm run test` passed with 20 suites / 93 tests.
+- `npm run test:e2e` passed with 9 suites / 76 tests.
+- First parallel test run had Argon2-related timeout pressure, but the required suites passed when rerun sequentially.
+- No current blocker remains from Authentication, Auth Session, User/Profile, Onboarding, Core Logs Weight/Water/Exercise/Meal Tasks 7.1-8.4, or Dashboard Tasks 9.2-9.3.

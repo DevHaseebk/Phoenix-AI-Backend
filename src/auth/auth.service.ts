@@ -33,6 +33,11 @@ export interface LoginResponse {
   };
 }
 
+export interface RefreshAccessTokenResponse {
+  accessToken: string;
+  expiresIn: number;
+}
+
 type TokenDuration = StringValue;
 
 @Injectable()
@@ -132,19 +137,11 @@ export class AuthService {
       throw this.invalidCredentials();
     }
 
-    const accessToken = await this.jwtService.signAsync(
-      {
-        sub: user.id,
-        email: user.email,
-        status: user.status,
-      },
-      {
-        secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-        expiresIn: this.config.getOrThrow<TokenDuration>(
-          'JWT_ACCESS_EXPIRES_IN',
-        ),
-      },
-    );
+    const accessToken = await this.signAccessToken({
+      id: user.id,
+      email: user.email,
+      status: user.status,
+    });
     const refreshToken = randomBytes(64).toString('base64url');
     const tokenHash = this.hashRefreshToken(refreshToken);
     const expiresAt = new Date(
@@ -184,8 +181,91 @@ export class AuthService {
     };
   }
 
+  async refreshAccessToken(
+    refreshToken: string,
+  ): Promise<RefreshAccessTokenResponse> {
+    const storedRefreshToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: this.hashRefreshToken(refreshToken) },
+      select: {
+        expiresAt: true,
+        revokedAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !storedRefreshToken ||
+      storedRefreshToken.revokedAt !== null ||
+      storedRefreshToken.expiresAt.getTime() <= Date.now() ||
+      !storedRefreshToken.user.email ||
+      storedRefreshToken.user.status !== UserStatus.ACTIVE ||
+      storedRefreshToken.user.deletedAt !== null
+    ) {
+      throw this.invalidRefreshToken();
+    }
+
+    const accessTokenExpiresIn = this.config.getOrThrow<string>(
+      'JWT_ACCESS_EXPIRES_IN',
+    );
+
+    return {
+      accessToken: await this.signAccessToken({
+        id: storedRefreshToken.user.id,
+        email: storedRefreshToken.user.email,
+        status: storedRefreshToken.user.status,
+      }),
+      expiresIn: this.durationToMilliseconds(accessTokenExpiresIn) / 1000,
+    };
+  }
+
+  async logout(refreshToken: string): Promise<void> {
+    const storedRefreshToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: this.hashRefreshToken(refreshToken) },
+      select: {
+        id: true,
+        revokedAt: true,
+      },
+    });
+
+    if (!storedRefreshToken || storedRefreshToken.revokedAt !== null) {
+      return;
+    }
+
+    await this.prisma.refreshToken.update({
+      where: { id: storedRefreshToken.id },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   private async verifyAgainstDummyHash(password: string): Promise<void> {
     await argon2.verify(await this.dummyPasswordHashPromise, password);
+  }
+
+  private async signAccessToken(user: {
+    id: string;
+    email: string | null;
+    status: UserStatus;
+  }): Promise<string> {
+    return this.jwtService.signAsync(
+      {
+        sub: user.id,
+        email: user.email,
+        status: user.status,
+      },
+      {
+        secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        expiresIn: this.config.getOrThrow<TokenDuration>(
+          'JWT_ACCESS_EXPIRES_IN',
+        ),
+      },
+    );
   }
 
   private hashRefreshToken(refreshToken: string): string {
@@ -194,6 +274,10 @@ export class AuthService {
 
   private invalidCredentials(): UnauthorizedException {
     return new UnauthorizedException('Invalid email or password');
+  }
+
+  private invalidRefreshToken(): UnauthorizedException {
+    return new UnauthorizedException('Unauthorized');
   }
 
   private durationToMilliseconds(duration: string): number {
