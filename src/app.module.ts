@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { validateEnvironment } from './config/env.validation';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { LogsModule } from './logs/logs.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     OnboardingModule,
     LogsModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

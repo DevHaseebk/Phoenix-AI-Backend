@@ -77,6 +77,15 @@
 | MealLog decimal serialization | Complete | Decimal-backed totals and item fields are returned as plain numbers |
 | MealLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
 | Postman manual verification | Complete | Developer manually verified implemented APIs with Postman |
+| Dashboard module | Complete | Dashboard Tasks 9.2-9.3 implemented |
+| Dashboard today API | Complete | `GET /api/v1/dashboard/today`, protected by JWT auth, current user only |
+| Dashboard today aggregation | Complete | Aggregates `UserProfile`, `WeightLog`, `MealLog`, `WaterLog`, and `ExerciseLog` data |
+| Dashboard summary API | Complete | `GET /api/v1/dashboard/summary`, protected by JWT auth, current user only |
+| Dashboard summary ranges | Complete | Supports `range=7d`, `range=30d`, `range=90d`; defaults to `7d`; invalid range returns `400` |
+| Dashboard timezone handling | Complete | Uses `UserProfile.timezone` or fallback `Asia/Karachi`; local boundaries converted to UTC for Prisma queries |
+| Dashboard placeholders | Complete | Deterministic `aiFocus`; `weeklyReview` and `rewardsPreview` placeholders; no AI call |
+| Dashboard decimal serialization | Complete | Decimal-backed values are returned as plain numbers |
+| Dashboard validation | Complete | Latest lint, build, unit, and e2e tests passed |
 
 ## Not Started
 
@@ -89,7 +98,6 @@
 | Password reset | Not started | Future auth implementation task |
 | Email verification | Not started | Future auth implementation task |
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
-| Dashboard module | Not started | Future MVP module |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |

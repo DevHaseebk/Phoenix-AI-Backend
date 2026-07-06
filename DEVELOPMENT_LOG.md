@@ -407,9 +407,9 @@ npx prisma migrate status
   - 24 tests
 - `npx prisma migrate status` reports the database schema is up to date.
 
-### Intentionally not implemented
+### Intentionally not implemented at that time
 
-- Dashboard module
+- Dashboard module; later implemented by Dashboard Tasks 9.2-9.3
 - AI provider logic
 - WhatsApp webhook
 - Admin modules
@@ -464,7 +464,7 @@ npx prisma migrate status
 
 ### Intentionally not implemented at that time
 
-- Dashboard
+- Dashboard; later implemented by Dashboard Tasks 9.2-9.3
 - AI provider logic
 - WhatsApp webhook
 - Admin modules
@@ -503,7 +503,7 @@ npx prisma migrate status
 - `GET /api/v1/logs/exercise` lists exercise logs for the authenticated user only.
 - `GET /api/v1/logs/exercise` supports `exerciseType` filtering.
 - `distanceKm` Decimal values are safely serialized as plain numbers.
-- Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
+- Profile fields are not updated by ExerciseLog APIs yet.
 - Manual Postman verification was completed successfully by the developer for implemented APIs.
 
 ### Prisma commands executed
@@ -528,7 +528,7 @@ npx prisma migrate status
 
 ### Intentionally not implemented at that time
 
-- Dashboard
+- Dashboard; later implemented by Dashboard Tasks 9.2-9.3
 - AI provider logic
 - WhatsApp webhook
 - Admin modules
@@ -556,7 +556,7 @@ npx prisma migrate status
 - Both WaterLog routes use `JwtAuthGuard` and `@CurrentUser()`.
 - `POST /api/v1/logs/water` creates water logs for the authenticated user only.
 - `GET /api/v1/logs/water` lists water logs for the authenticated user only.
-- Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
+- Profile fields are not updated by WaterLog APIs yet.
 
 ### Prisma commands executed
 
@@ -580,7 +580,7 @@ npx prisma migrate status
 
 ### Intentionally not implemented at that time
 
-- Dashboard
+- Dashboard; later implemented by Dashboard Tasks 9.2-9.3
 - AI provider logic
 - WhatsApp webhook
 - Admin modules
@@ -636,7 +636,7 @@ npx prisma migrate status
 - `DELETE /api/v1/logs/meals/:id` enforces ownership and uses hard delete for MVP because schema has no `deletedAt`.
 - MealLogItem rows are created and returned correctly.
 - Decimal-backed totals and item fields are safely serialized as plain numbers.
-- Dashboard summaries and profile fields are not updated by MealLog APIs yet.
+- Profile fields are not updated by MealLog APIs yet.
 
 ### Prisma commands executed
 
@@ -659,10 +659,75 @@ npx prisma migrate status
   - 8 suites
   - 54 tests
 
-### Intentionally not implemented
+### Intentionally not implemented at that time
 
-- Dashboard
+- Dashboard; later implemented by Dashboard Tasks 9.2-9.3
 - AI provider logic
 - Food Engine
 - WhatsApp webhook
 - Admin modules
+
+## 2026-07-06 - Dashboard Tasks 9.2-9.3
+
+### What changed
+
+- Added Dashboard module/controller/service.
+- Added protected Dashboard endpoints:
+  - `GET /api/v1/dashboard/today`
+  - `GET /api/v1/dashboard/summary`
+- Both Dashboard routes use `JwtAuthGuard` and `@CurrentUser()`.
+- Dashboard today aggregates:
+  - `UserProfile` targets/timezone
+  - `WeightLog` progress
+  - `MealLog` calories/protein/timeline
+  - `WaterLog` daily intake
+  - `ExerciseLog` steps/duration/calories burned
+- Dashboard summary supports:
+  - `range=7d`
+  - `range=30d`
+  - `range=90d`
+  - default `range=7d`
+- Invalid Dashboard summary range returns `400`.
+- Dashboard uses `UserProfile.timezone` when available and falls back to `Asia/Karachi`.
+- Dashboard date boundaries are calculated by local user timezone and converted to UTC for Prisma queries.
+- Summary averages are divided by total days in range.
+- `weightChangeKg` returns `null` when fewer than two weight logs exist.
+- Dashboard has deterministic `aiFocus` placeholder; no AI call is made.
+- `weeklyReview` and `rewardsPreview` are placeholders.
+- Decimal-backed values are serialized as plain numbers.
+- All Dashboard log queries are scoped to the authenticated user only.
+
+### Prisma
+
+- No Prisma schema changes were made for Dashboard Tasks 9.2-9.3.
+- No migrations were created or run for Dashboard Tasks 9.2-9.3.
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 20 suites
+  - 85 tests
+- `npm run test:e2e` passed:
+  - 9 suites
+  - 65 tests
+
+### Current status
+
+- Completed backend modules now include:
+  - Foundation
+  - Prisma/Supabase
+  - Auth
+  - User/Profile
+  - Onboarding
+  - Core Logs: Weight, Water, Exercise, Meal
+  - Dashboard
+
+### Intentionally not implemented
+
+- AI provider logic
+- Food Engine
+- WhatsApp webhook
+- Admin modules
+- Public-beta auth hardening

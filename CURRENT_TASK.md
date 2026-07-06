@@ -1,74 +1,57 @@
 # Current Task
 
-Task: Core Logs MealLog 8.2-8.4
+Task: Dashboard Tasks 9.2-9.3
 
 Status: Completed
 
 Scope:
 
-- Task 8.2 MealLog Prisma schema and migration
-- Task 8.3 MealLog create/list APIs
-- Task 8.4 MealLog get/update/delete APIs
-- Migration `20260706123309_meal_log` applied
-- `MealLog` Prisma model added
-- `MealLogItem` Prisma model added
-- `MealType` enum added:
-  - `BREAKFAST`
-  - `LUNCH`
-  - `DINNER`
-  - `SNACK`
-  - `CUSTOM`
-- `MealLogSource` enum added:
-  - `MANUAL`
-  - `AI_CHAT`
-  - `WHATSAPP`
-  - `IMPORTED`
-- `MealLogStatus` enum added:
-  - `LOGGED`
-  - `ESTIMATED`
-  - `NEEDS_REVIEW`
-- `ConfidenceLevel` enum added:
-  - `LOW`
-  - `MEDIUM`
-  - `HIGH`
-  - `VERIFIED`
-- `User.mealLogs` relation added
-- MealLog indexes added:
-  - `userId`
-  - `loggedAt`
-  - `mealType`
-  - `userId + loggedAt`
-- MealLogItem index added:
-  - `mealLogId`
-- MealLog endpoints complete:
-  - `POST /api/v1/logs/meals`
-  - `GET /api/v1/logs/meals`
-  - `GET /api/v1/logs/meals/:id`
-  - `PATCH /api/v1/logs/meals/:id`
-  - `DELETE /api/v1/logs/meals/:id`
-- All MealLog routes are protected by `JwtAuthGuard` and use `@CurrentUser()`
-- `POST /api/v1/logs/meals` creates meals for the current user only
-- `GET /api/v1/logs/meals` lists the current user's meals only
-- `GET /api/v1/logs/meals/:id` enforces ownership
-- `PATCH /api/v1/logs/meals/:id` enforces ownership, updates meal fields, supports item replacement, and recalculates totals from items
-- `DELETE /api/v1/logs/meals/:id` enforces ownership and uses hard delete for MVP because schema has no `deletedAt`
-- MealLogItem rows are created and returned correctly
-- Decimal-backed totals and item fields are serialized as plain numbers
-- Dashboard summaries and profile fields are not updated by MealLog APIs yet
+- Dashboard module is implemented.
+- `GET /api/v1/dashboard/today` is complete.
+- `GET /api/v1/dashboard/summary` is complete.
+- Dashboard routes are protected by `JwtAuthGuard` and use `@CurrentUser()`.
+- Dashboard today aggregates:
+  - `UserProfile` targets/timezone
+  - `WeightLog` progress
+  - `MealLog` calories/protein/timeline
+  - `WaterLog` daily intake
+  - `ExerciseLog` steps/duration/calories burned
+- Dashboard summary supports:
+  - `range=7d`
+  - `range=30d`
+  - `range=90d`
+  - default `range=7d`
+- Invalid summary range returns `400`.
+- Dashboard uses `UserProfile.timezone` when available and falls back to `Asia/Karachi`.
+- Date boundaries are calculated by local user timezone and converted to UTC for Prisma queries.
+- Summary averages are divided by total days in range.
+- `weightChangeKg` returns `null` when fewer than two weight logs exist.
+- Dashboard has deterministic `aiFocus` placeholder; no AI call is made.
+- `weeklyReview` and `rewardsPreview` are placeholders.
+- Decimal-backed values are serialized as plain numbers.
+- All dashboard log queries are scoped to the current user only.
+- No Prisma schema changes or migrations were made for Dashboard.
 - Core Logs are complete:
   - WeightLog
   - WaterLog
   - ExerciseLog
   - MealLog
+- Completed backend modules now include:
+  - Foundation
+  - Prisma/Supabase
+  - Auth
+  - User/Profile
+  - Onboarding
+  - Core Logs: Weight, Water, Exercise, Meal
+  - Dashboard
 - Validation passed:
   - lint
   - build
-  - unit tests: 17 suites / 69 tests
-  - e2e tests: 8 suites / 54 tests
+  - unit tests: 20 suites / 85 tests
+  - e2e tests: 9 suites / 65 tests
 
 Out of scope:
 
-- Dashboard
 - AI
 - Food Engine
 - WhatsApp

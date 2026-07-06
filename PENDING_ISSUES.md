@@ -137,13 +137,34 @@
   - `npm run build`
   - `npm run test` with 17 suites / 69 tests
   - `npm run test:e2e` with 8 suites / 54 tests
+- Dashboard Tasks 9.2-9.3 are complete:
+  - `GET /api/v1/dashboard/today`
+  - `GET /api/v1/dashboard/summary`
+- Dashboard routes are protected by `JwtAuthGuard` and use `@CurrentUser()`.
+- Dashboard today aggregates `UserProfile`, `WeightLog`, `MealLog`, `WaterLog`, and `ExerciseLog` data.
+- Dashboard summary supports `range=7d`, `range=30d`, and `range=90d`, with default `range=7d`.
+- Invalid Dashboard summary range returns `400`.
+- Dashboard uses `UserProfile.timezone` when available and falls back to `Asia/Karachi`.
+- Dashboard date boundaries are calculated by local user timezone and converted to UTC for Prisma queries.
+- Summary averages are divided by total days in range.
+- `weightChangeKg` returns `null` when fewer than two weight logs exist.
+- Dashboard has deterministic `aiFocus` placeholder; no AI call is made.
+- `weeklyReview` and `rewardsPreview` are placeholders.
+- Decimal-backed Dashboard values are serialized as plain numbers.
+- All Dashboard log queries are scoped to the current user only.
+- No Prisma schema changes or migrations were made for Dashboard.
+- Dashboard Tasks 9.2-9.3 validation passed:
+  - `npm run lint`
+  - `npm run build`
+  - `npm run test` with 20 suites / 85 tests
+  - `npm run test:e2e` with 9 suites / 65 tests
 
 ## Deferred By Scope
 
 - Refresh endpoint, token rotation, logout, Google OAuth, password reset, and email verification are intentionally deferred.
 - Rate limiting/brute-force protection is intentionally deferred as future security hardening before public beta.
 - `UserProfile.currentWeightKg` synchronization from WeightLog is deferred until dashboard/current-weight rules are defined.
-- Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
-- Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
-- Dashboard summaries and profile fields are not updated by MealLog APIs yet.
-- Dashboard, AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
+- Profile fields are not updated by WaterLog APIs yet.
+- Profile fields are not updated by ExerciseLog APIs yet.
+- Profile fields are not updated by MealLog APIs yet.
+- AI provider, WhatsApp webhook, and admin modules are intentionally deferred.

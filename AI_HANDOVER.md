@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, Core Logs ExerciseLog Tasks 7.5-7.6, and Core Logs MealLog Tasks 8.2-8.4 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, Core Logs ExerciseLog Tasks 7.5-7.6, Core Logs MealLog Tasks 8.2-8.4, and Dashboard Tasks 9.2-9.3 are complete.
 
 The NestJS app now starts with:
 
@@ -69,7 +69,9 @@ The NestJS app now starts with:
 - meal log endpoint at `GET /api/v1/logs/meals`,
 - meal log endpoint at `GET /api/v1/logs/meals/:id`,
 - meal log endpoint at `PATCH /api/v1/logs/meals/:id`,
-- meal log endpoint at `DELETE /api/v1/logs/meals/:id`.
+- meal log endpoint at `DELETE /api/v1/logs/meals/:id`,
+- dashboard today endpoint at `GET /api/v1/dashboard/today`,
+- dashboard summary endpoint at `GET /api/v1/dashboard/summary`.
 
 Current Prisma schema contains:
 
@@ -114,6 +116,7 @@ Latest Prisma schema change:
 - Migration file: `20260706123309_meal_log`
 - Migration was applied successfully.
 - `npx prisma migrate status` reports the database schema is up to date.
+- Dashboard Tasks 9.2-9.3 made no Prisma schema changes and created no migrations.
 
 ## Decisions Used
 
@@ -133,16 +136,16 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Implement the Dashboard module planning/build next, using completed WeightLog, WaterLog, ExerciseLog, and MealLog data.
+Plan the next MVP backend module after Dashboard. AI provider integration is the likely next module if the product roadmap is continuing toward AI-first guidance; otherwise review the roadmap before coding.
 
 ## Guardrails
 
 - Signup currently creates a user only; login issues JWT access tokens and opaque refresh tokens.
-- Do not add refresh endpoint, logout, refresh token rotation, Google OAuth, password reset, email verification, WhatsApp, admin, or business modules unless explicitly approved.
+- Do not add refresh endpoint, logout, refresh token rotation, Google OAuth, password reset, email verification, WhatsApp, admin, or additional business modules unless explicitly approved.
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
-- Do not add Dashboard, AI, WhatsApp, or Admin modules until explicitly approved.
+- Do not add AI, WhatsApp, or Admin modules until explicitly approved.
 - Logs module currently contains WeightLog, WaterLog, ExerciseLog, and MealLog.
 
 ## Auth Notes
@@ -196,7 +199,7 @@ Implement the Dashboard module planning/build next, using completed WeightLog, W
 - `WaterLogSource` values are `MANUAL`, `QUICK_ADD`, and `IMPORTED`.
 - `source` is not client-controlled for `POST /api/v1/logs/water`; the service defaults it to `MANUAL`.
 - WaterLog safe responses include `id`, `amountMl`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
-- Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
+- Profile fields are not updated by WaterLog APIs yet.
 - `GET /api/v1/logs/exercise` lists the authenticated user's exercise logs only and supports `exerciseType` filtering.
 - `POST /api/v1/logs/exercise` creates an exercise log for the authenticated user only.
 - Both ExerciseLog routes use `JwtAuthGuard` and `@CurrentUser()`.
@@ -205,7 +208,7 @@ Implement the Dashboard module planning/build next, using completed WeightLog, W
 - `source` is not client-controlled for `POST /api/v1/logs/exercise`; the service defaults it to `MANUAL`.
 - ExerciseLog safe responses include `id`, `exerciseType`, `durationMinutes`, `steps`, `distanceKm`, `estimatedCaloriesBurned`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
 - `distanceKm` Decimal is serialized as a plain number.
-- Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
+- Profile fields are not updated by ExerciseLog APIs yet.
 - `POST /api/v1/logs/meals` creates a meal log for the authenticated user only.
 - `GET /api/v1/logs/meals` lists the authenticated user's meal logs only.
 - `GET /api/v1/logs/meals/:id` returns one authenticated-user-owned meal log only.
@@ -221,9 +224,37 @@ Implement the Dashboard module planning/build next, using completed WeightLog, W
 - MealLogItem rows are created and returned correctly.
 - MealLog safe responses include `id`, `mealType`, `description`, totals, `status`, `confidenceLevel`, `source`, `loggedAt`, `note`, `createdAt`, `updatedAt`, and `items`.
 - Decimal-backed MealLog totals and MealLogItem fields are serialized as plain numbers.
-- Dashboard summaries and profile fields are not updated by MealLog APIs yet.
+- Profile fields are not updated by MealLog APIs yet.
 - `.gitignore` was fixed from `logs` to `/logs` so `src/logs` source files are not hidden from Git.
 - Manual Postman verification was completed successfully by the developer for implemented APIs.
+
+## Dashboard Notes
+
+- Dashboard module is implemented.
+- `GET /api/v1/dashboard/today` is complete.
+- `GET /api/v1/dashboard/summary` is complete.
+- Dashboard routes use `JwtAuthGuard` and `@CurrentUser()`.
+- Dashboard today aggregates:
+  - `UserProfile` targets/timezone
+  - `WeightLog` progress
+  - `MealLog` calories/protein/timeline
+  - `WaterLog` daily intake
+  - `ExerciseLog` steps/duration/calories burned
+- Dashboard summary supports:
+  - `range=7d`
+  - `range=30d`
+  - `range=90d`
+  - default `range=7d`
+- Invalid Dashboard summary range returns `400`.
+- Dashboard uses `UserProfile.timezone` when available and falls back to `Asia/Karachi`.
+- Dashboard date boundaries are calculated by local user timezone and converted to UTC for Prisma queries.
+- Summary averages are divided by total days in range.
+- `weightChangeKg` returns `null` when fewer than two weight logs exist.
+- Dashboard has deterministic `aiFocus` placeholder; no AI call is made.
+- `weeklyReview` and `rewardsPreview` are placeholders.
+- Decimal-backed Dashboard values are serialized as plain numbers.
+- All Dashboard log queries are scoped to the authenticated user only.
+- Dashboard Tasks 9.2-9.3 made no Prisma schema changes and created no migrations.
 
 ## Prisma Notes
 
@@ -236,11 +267,12 @@ Implement the Dashboard module planning/build next, using completed WeightLog, W
 - Migration applied: `20260706074733_water_log`.
 - Migration applied: `20260706114403_exercise_log`.
 - Migration applied: `20260706123309_meal_log`.
+- No Dashboard migration exists because Dashboard Tasks 9.2-9.3 did not require schema changes.
 
 ## Validation Notes
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed with 17 suites / 69 tests.
-- `npm run test:e2e` passed with 8 suites / 54 tests.
-- No current blocker remains from Authentication, User/Profile, Onboarding, or Core Logs Weight/Water/Exercise/Meal Tasks 7.1-8.4.
+- `npm run test` passed with 20 suites / 85 tests.
+- `npm run test:e2e` passed with 9 suites / 65 tests.
+- No current blocker remains from Authentication, User/Profile, Onboarding, Core Logs Weight/Water/Exercise/Meal Tasks 7.1-8.4, or Dashboard Tasks 9.2-9.3.
