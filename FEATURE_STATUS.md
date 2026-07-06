@@ -35,7 +35,15 @@
 | Get current user | Complete | `GET /api/v1/me` |
 | Update own basic profile | Complete | `PATCH /api/v1/me/profile`, supports `fullName` and `phone` |
 | Change own password | Complete | `PATCH /api/v1/me/password`, verifies current password and revokes active refresh tokens |
-| User/Profile Prisma changes | Not needed for MVP scope | No UserProfile model, schema change, or migration added for Tasks 4.1-4.4 |
+| User/Profile Prisma changes | Not needed for MVP scope | No UserProfile model, schema change, or migration was added during Tasks 4.1-4.4; `UserProfile` was later added by Onboarding Task 5.2 |
+| Onboarding schema | Complete | Added `UserProfile`, `UserOnboarding`, and onboarding enums |
+| Onboarding migration | Complete | Migration `20260705180108_onboarding_profile` applied |
+| Get onboarding state | Complete | `GET /api/v1/onboarding`, protected by JWT auth |
+| Save onboarding step | Complete | `POST /api/v1/onboarding/step`, saves and returns safe draft state |
+| Complete onboarding | Complete | `POST /api/v1/onboarding/complete`, upserts profile/onboarding completion |
+| Target calculation | Complete | Deterministic backend calorie/protein calculation; no AI used |
+| First-win options | Complete | Returns `UPDATE_WEIGHT`, `LOG_FIRST_MEAL`, `LOG_WATER`, `OPEN_DASHBOARD` |
+| Onboarding validation | Complete | Latest lint, build, unit, and e2e tests passed |
 
 ## Not Started
 
@@ -48,8 +56,9 @@
 | Password reset | Not started | Future auth implementation task |
 | Email verification | Not started | Future auth implementation task |
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
-| UserProfile model | Optional future | Add only if onboarding/personalization requires fields like timezone or preferredLanguage |
-| Product models | Not started | Future schema task |
+| Dashboard module | Not started | Future MVP module |
+| Logs module | Not started | Future MVP module |
+| Meal/water/weight/exercise models | Not started | Future schema tasks |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |

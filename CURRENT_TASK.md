@@ -1,30 +1,40 @@
 # Current Task
 
-Task: User/Profile Module 4.1-4.4
+Task: Onboarding Module 5.2-5.3
 
 Status: Completed
 
 Scope:
 
-- Task 4.1 JWT Auth Guard and `@CurrentUser()` decorator
-- Task 4.2 `GET /api/v1/me`
-- Task 4.3 `PATCH /api/v1/me/profile`
-- Task 4.4 `PATCH /api/v1/me/password`
-- Current authenticated user context with `userId`, `email`, and `status`
-- Safe current user response shape without `passwordHash`
-- Basic profile update for `fullName` and `phone`
-- Password change with Argon2 verification and Argon2id hashing
-- Password change revokes existing active refresh tokens
-- No UserProfile Prisma model added
-- No Prisma schema changes or migrations made for User/Profile
+- Task 5.2 Onboarding Prisma schema and migration
+- Task 5.3 Onboarding service/controller/DTOs and target calculation
+- Migration `20260705180108_onboarding_profile` applied
+- `UserProfile` Prisma model added
+- `UserOnboarding` Prisma model added
+- Onboarding endpoints complete:
+  - `GET /api/v1/onboarding`
+  - `POST /api/v1/onboarding/step`
+  - `POST /api/v1/onboarding/complete`
+- Deterministic backend calorie/protein target calculation
+- Step draft is saved and safe draft state is returned
+- Completion returns first-win options:
+  - `UPDATE_WEIGHT`
+  - `LOG_FIRST_MEAL`
+  - `LOG_WATER`
+  - `OPEN_DASHBOARD`
 - Validation passed:
   - lint
   - build
-  - unit tests
-  - e2e tests
+  - unit tests: 9 suites / 34 tests
+  - e2e tests: 4 suites / 24 tests
 
 Out of scope:
 
+- Dashboard
+- Logs
+- AI
+- WhatsApp
+- Admin
 - Refresh endpoint
 - Token rotation
 - Logout
@@ -32,8 +42,5 @@ Out of scope:
 - Password reset
 - Email verification
 - Rate limiting/brute-force protection before public beta
-- Separate UserProfile model unless onboarding/personalization requires timezone or preferredLanguage
-- WhatsApp
-- Admin
 - Frontend/admin changes
-- Business features
+- Other business features

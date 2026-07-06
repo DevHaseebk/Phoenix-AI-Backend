@@ -28,11 +28,28 @@
   - `npm run build`
   - `npm run test`
   - `npm run test:e2e`
+- Onboarding Tasks 5.2-5.3 are complete:
+  - `UserProfile` model
+  - `UserOnboarding` model
+  - `GET /api/v1/onboarding`
+  - `POST /api/v1/onboarding/step`
+  - `POST /api/v1/onboarding/complete`
+- Migration `20260705180108_onboarding_profile` is applied.
+- Onboarding step draft is saved and returned as safe draft state.
+- Onboarding completion returns first-win options:
+  - `UPDATE_WEIGHT`
+  - `LOG_FIRST_MEAL`
+  - `LOG_WATER`
+  - `OPEN_DASHBOARD`
+- Onboarding Tasks 5.2-5.3 validation passed:
+  - `npm run lint`
+  - `npm run build`
+  - `npm run test` with 9 suites / 34 tests
+  - `npm run test:e2e` with 4 suites / 24 tests
 
 ## Deferred By Scope
 
 - Refresh endpoint, token rotation, logout, Google OAuth, password reset, and email verification are intentionally deferred.
 - Rate limiting/brute-force protection is intentionally deferred as future security hardening before public beta.
-- A separate UserProfile model is intentionally deferred unless onboarding/personalization requires fields like timezone or preferredLanguage.
-- Product Prisma models are intentionally deferred.
-- AI provider, WhatsApp webhook, admin, and business modules are intentionally deferred.
+- Dashboard, Logs, AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
+- Meal, water, weight, and exercise logging models are intentionally deferred.

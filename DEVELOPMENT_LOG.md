@@ -332,7 +332,7 @@ npm run test:e2e
 
 - No Prisma schema changes were made for User/Profile Tasks 4.1-4.4.
 - No migrations were created or run for User/Profile Tasks 4.1-4.4.
-- No UserProfile Prisma model has been added.
+- No UserProfile Prisma model was added during User/Profile Tasks 4.1-4.4.
 
 ### Validation
 
@@ -352,5 +352,66 @@ npm run test:e2e
 - Password reset
 - Google OAuth
 - Rate limiting/brute-force protection before public beta
-- Separate UserProfile model
-- Timezone/preferredLanguage profile fields
+- Separate UserProfile model during User/Profile Tasks 4.1-4.4; later added by Onboarding Task 5.2
+- Timezone/preferredLanguage fields on `UserProfile`; later added by Onboarding Task 5.2
+
+## 2026-07-05 - Onboarding Tasks 5.2-5.3
+
+### What changed
+
+- Added MVP onboarding Prisma schema.
+- Added `UserProfile` Prisma model.
+- Added `UserOnboarding` Prisma model.
+- Added onboarding enums:
+  - `Gender`
+  - `GoalType`
+  - `GoalPace`
+  - `ActivityLevel`
+  - `OnboardingStatus`
+- Added relations from `User` to `UserProfile` and `UserOnboarding`.
+- Created and applied Prisma migration:
+  - `20260705180108_onboarding_profile`
+- Added Onboarding module/controller/service.
+- Added protected onboarding endpoints:
+  - `GET /api/v1/onboarding`
+  - `POST /api/v1/onboarding/step`
+  - `POST /api/v1/onboarding/complete`
+- Added deterministic backend target calculation for calorie and protein targets.
+- Kept target calculation non-AI for MVP.
+- `POST /api/v1/onboarding/step` saves step data into `UserOnboarding.draft` and returns safe draft state.
+- `POST /api/v1/onboarding/complete` returns MVP first-win options:
+  - `UPDATE_WEIGHT`
+  - `LOG_FIRST_MEAL`
+  - `LOG_WATER`
+  - `OPEN_DASHBOARD`
+- Regenerated Prisma Client after onboarding schema changes.
+
+### Prisma commands executed
+
+```bash
+npx prisma format
+npx prisma generate
+npx prisma migrate dev --name onboarding_profile
+npx prisma migrate status
+```
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 9 suites
+  - 34 tests
+- `npm run test:e2e` passed:
+  - 4 suites
+  - 24 tests
+- `npx prisma migrate status` reports the database schema is up to date.
+
+### Intentionally not implemented
+
+- Dashboard module
+- Logs module
+- AI provider logic
+- WhatsApp webhook
+- Admin modules
+- Meal, water, weight, or exercise logging models

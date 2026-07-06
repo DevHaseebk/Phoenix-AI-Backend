@@ -15,6 +15,38 @@ enum UserStatus {
   DELETED
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum GoalType {
+  LOSE_WEIGHT
+  MAINTAIN_WEIGHT
+  GAIN_WEIGHT
+}
+
+enum GoalPace {
+  SLOW
+  BALANCED
+  AGGRESSIVE
+}
+
+enum ActivityLevel {
+  SEDENTARY
+  LIGHTLY_ACTIVE
+  MODERATELY_ACTIVE
+  VERY_ACTIVE
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
 model FoundationMigrationCheck {
   id        String   @id @default(uuid())
   label     String   @unique
@@ -24,24 +56,64 @@ model FoundationMigrationCheck {
 }
 
 model User {
-  id              String         @id @default(uuid())
-  email           String?        @unique
+  id              String          @id @default(uuid())
+  email           String?         @unique
   passwordHash    String?
   fullName        String?
-  phone           String?        @unique
-  status          UserStatus     @default(ACTIVE)
+  phone           String?         @unique
+  status          UserStatus      @default(ACTIVE)
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
   lastActiveAt    DateTime?
   deletedAt       DateTime?
+  profile         UserProfile?
+  onboarding      UserOnboarding?
   refreshTokens   RefreshToken[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@index([status])
   @@index([lastActiveAt])
   @@index([deletedAt])
   @@map("users")
+}
+
+model UserProfile {
+  id                 String         @id @default(uuid())
+  userId             String         @unique
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gender             Gender?
+  dateOfBirth        DateTime?
+  heightCm           Decimal?
+  currentWeightKg    Decimal?
+  targetWeightKg     Decimal?
+  goalType           GoalType       @default(LOSE_WEIGHT)
+  goalPace           GoalPace       @default(BALANCED)
+  activityLevel      ActivityLevel?
+  timezone           String?        @default("Asia/Karachi")
+  preferredLanguage  String?        @default("en")
+  calorieTarget      Decimal?
+  proteinTargetGrams Decimal?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@map("user_profiles")
+}
+
+model UserOnboarding {
+  id             String           @id @default(uuid())
+  userId         String           @unique
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status         OnboardingStatus @default(NOT_STARTED)
+  currentStep    String?
+  completedSteps Json             @default("[]")
+  draft          Json             @default("{}")
+  completedAt    DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status])
+  @@map("user_onboarding")
 }
 
 model RefreshToken {

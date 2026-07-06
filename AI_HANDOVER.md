@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3 and User/Profile Tasks 4.1-4.4 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, and Onboarding Tasks 5.2-5.3 are complete.
 
 The NestJS app now starts with:
 
@@ -33,7 +33,15 @@ The NestJS app now starts with:
 - `@CurrentUser()` decorator,
 - current user endpoint at `GET /api/v1/me`,
 - basic profile update endpoint at `PATCH /api/v1/me/profile`,
-- password change endpoint at `PATCH /api/v1/me/password`.
+- password change endpoint at `PATCH /api/v1/me/password`,
+- `UserProfile` Prisma model,
+- `UserOnboarding` Prisma model,
+- onboarding endpoint at `GET /api/v1/onboarding`,
+- onboarding step endpoint at `POST /api/v1/onboarding/step`,
+- onboarding completion endpoint at `POST /api/v1/onboarding/complete`,
+- deterministic backend calorie/protein target calculation,
+- safe onboarding draft continuation state,
+- MVP first-win options after onboarding completion.
 
 Current Prisma schema contains:
 
@@ -41,16 +49,25 @@ Current Prisma schema contains:
 - `User`
 - `RefreshToken`
 - `UserStatus`
+- `UserProfile`
+- `UserOnboarding`
+- `Gender`
+- `GoalType`
+- `GoalPace`
+- `ActivityLevel`
+- `OnboardingStatus`
 
 `FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
-No UserProfile Prisma model has been added yet. User/Profile Tasks 4.1-4.4 required no Prisma schema changes and no migrations.
+User/Profile Tasks 4.1-4.4 required no Prisma schema changes and no migrations. `UserProfile` and `UserOnboarding` were later added by Onboarding Task 5.2.
 
 Latest Prisma schema change:
 
-- `RefreshToken.deviceType String?`
-- Migration file: `20260705170000_auth_3_3_login_device_type`
-- Migration was applied successfully after switching to the Supabase Session Pooler connection string.
+- `UserProfile`
+- `UserOnboarding`
+- Onboarding enums
+- Migration file: `20260705180108_onboarding_profile`
+- Migration was applied successfully.
 - `npx prisma migrate status` reports the database schema is up to date.
 
 ## Decisions Used
@@ -71,7 +88,7 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Plan the next MVP backend module. User/Profile MVP backend scope is complete unless timezone/language or a separate UserProfile model is required for onboarding/personalization.
+Plan the Dashboard module or the next MVP logging foundation module that Dashboard needs.
 
 ## Guardrails
 
@@ -80,6 +97,7 @@ Plan the next MVP backend module. User/Profile MVP backend scope is complete unl
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
+- Do not add Dashboard, Logs, AI, WhatsApp, or Admin modules until explicitly approved.
 
 ## Auth Notes
 
@@ -103,8 +121,19 @@ Plan the next MVP backend module. User/Profile MVP backend scope is complete unl
 - `PATCH /api/v1/me/profile` updates only `fullName` and `phone`.
 - `PATCH /api/v1/me/password` verifies the current password, stores only an Argon2id hash for the new password, and revokes existing active refresh tokens.
 - User/Profile responses do not include `passwordHash`.
-- No separate UserProfile model exists yet.
-- Add UserProfile only if onboarding/personalization requires fields like timezone or preferredLanguage.
+
+## Onboarding Notes
+
+- `GET /api/v1/onboarding` returns existing onboarding state or a default `NOT_STARTED` state.
+- `POST /api/v1/onboarding/step` saves step data into `UserOnboarding.draft` and returns safe draft state for frontend continuation.
+- `POST /api/v1/onboarding/complete` upserts `UserProfile` and marks `UserOnboarding` as `COMPLETED`.
+- Calorie and protein targets are calculated by deterministic backend logic, not AI.
+- Clients cannot provide `calorieTarget` or `proteinTargetGrams`.
+- Completion returns first-win options:
+  - `UPDATE_WEIGHT`
+  - `LOG_FIRST_MEAL`
+  - `LOG_WATER`
+  - `OPEN_DASHBOARD`
 
 ## Prisma Notes
 
@@ -112,11 +141,12 @@ Plan the next MVP backend module. User/Profile MVP backend scope is complete unl
 - Migration applied: `20260703125907_foundation_2_2_prisma_setup`.
 - Migration applied: `20260703131635_auth_3_1_user_refresh_token`.
 - Migration applied: `20260705170000_auth_3_3_login_device_type`.
+- Migration applied: `20260705180108_onboarding_profile`.
 
 ## Validation Notes
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed.
-- `npm run test:e2e` passed.
-- No current blocker remains from Authentication or User/Profile Tasks 4.1-4.4.
+- `npm run test` passed with 9 suites / 34 tests.
+- `npm run test:e2e` passed with 4 suites / 24 tests.
+- No current blocker remains from Authentication, User/Profile, or Onboarding Tasks 5.2-5.3.
