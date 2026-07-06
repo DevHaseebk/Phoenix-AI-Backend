@@ -410,8 +410,64 @@ npx prisma migrate status
 ### Intentionally not implemented
 
 - Dashboard module
-- Logs module
 - AI provider logic
 - WhatsApp webhook
 - Admin modules
-- Meal, water, weight, or exercise logging models
+- Water, exercise, or meal logging models
+
+## 2026-07-06 - Core Logs WeightLog Tasks 7.1-7.2
+
+### What changed
+
+- Added `WeightLogSource` enum:
+  - `MANUAL`
+  - `ONBOARDING`
+  - `IMPORTED`
+- Added `WeightLog` Prisma model.
+- Added `User.weightLogs` relation.
+- Added WeightLog indexes:
+  - `userId`
+  - `loggedAt`
+  - `userId + loggedAt`
+- Created and applied Prisma migration:
+  - `20260706072703_weight_log`
+- Added Logs module.
+- Added WeightLog service/controller/DTOs.
+- Added protected WeightLog endpoints:
+  - `GET /api/v1/logs/weight`
+  - `POST /api/v1/logs/weight`
+- Both WeightLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `POST /api/v1/logs/weight` creates logs for the authenticated user only.
+- `GET /api/v1/logs/weight` lists logs for the authenticated user only.
+- `UserProfile.currentWeightKg` update is deferred until dashboard/current-weight synchronization rules are defined.
+- Fixed `.gitignore` from `logs` to `/logs` so `src/logs` source files are not hidden from Git.
+
+### Prisma commands executed
+
+```bash
+npx prisma format
+npx prisma migrate status
+npx prisma migrate dev --name weight_log
+npx prisma migrate status
+```
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 11 suites
+  - 40 tests
+- `npm run test:e2e` passed:
+  - 5 suites
+  - 29 tests
+
+### Intentionally not implemented
+
+- WaterLog
+- ExerciseLog
+- MealLog
+- Dashboard
+- AI provider logic
+- WhatsApp webhook
+- Admin modules

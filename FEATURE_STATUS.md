@@ -44,6 +44,14 @@
 | Target calculation | Complete | Deterministic backend calorie/protein calculation; no AI used |
 | First-win options | Complete | Returns `UPDATE_WEIGHT`, `LOG_FIRST_MEAL`, `LOG_WATER`, `OPEN_DASHBOARD` |
 | Onboarding validation | Complete | Latest lint, build, unit, and e2e tests passed |
+| WeightLog schema | Complete | Added `WeightLog`, `WeightLogSource`, and `User.weightLogs` relation |
+| WeightLog migration | Complete | Migration `20260706072703_weight_log` applied |
+| WeightLog indexes | Complete | Added `userId`, `loggedAt`, and `userId + loggedAt` indexes |
+| Logs module | Partial | Weight logs implemented only |
+| WeightLog create API | Complete | `POST /api/v1/logs/weight`, protected by JWT auth, current user only |
+| WeightLog list API | Complete | `GET /api/v1/logs/weight`, protected by JWT auth, current user only |
+| WeightLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
+| Git ignore for logs source | Complete | `.gitignore` changed from `logs` to `/logs` so `src/logs` is tracked |
 
 ## Not Started
 
@@ -57,8 +65,9 @@
 | Email verification | Not started | Future auth implementation task |
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
 | Dashboard module | Not started | Future MVP module |
-| Logs module | Not started | Future MVP module |
-| Meal/water/weight/exercise models | Not started | Future schema tasks |
+| WaterLog model/API | Not started | Future core logs task |
+| ExerciseLog model/API | Not started | Future core logs task |
+| MealLog model/API | Not started | Future core logs task |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |

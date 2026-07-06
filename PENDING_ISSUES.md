@@ -46,10 +46,30 @@
   - `npm run build`
   - `npm run test` with 9 suites / 34 tests
   - `npm run test:e2e` with 4 suites / 24 tests
+- Core Logs WeightLog Tasks 7.1-7.2 are complete:
+  - `WeightLog` model
+  - `WeightLogSource` enum
+  - `User.weightLogs` relation
+  - `GET /api/v1/logs/weight`
+  - `POST /api/v1/logs/weight`
+- Migration `20260706072703_weight_log` is applied.
+- WeightLog indexes are added:
+  - `userId`
+  - `loggedAt`
+  - `userId + loggedAt`
+- WeightLog routes are protected by `JwtAuthGuard` and use `@CurrentUser()`.
+- WeightLog create/list operations are scoped to the current user.
+- `.gitignore` was fixed from `logs` to `/logs` so `src/logs` files are not hidden from Git.
+- Core Logs WeightLog Tasks 7.1-7.2 validation passed:
+  - `npm run lint`
+  - `npm run build`
+  - `npm run test` with 11 suites / 40 tests
+  - `npm run test:e2e` with 5 suites / 29 tests
 
 ## Deferred By Scope
 
 - Refresh endpoint, token rotation, logout, Google OAuth, password reset, and email verification are intentionally deferred.
 - Rate limiting/brute-force protection is intentionally deferred as future security hardening before public beta.
-- Dashboard, Logs, AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
-- Meal, water, weight, and exercise logging models are intentionally deferred.
+- `UserProfile.currentWeightKg` synchronization from WeightLog is deferred until dashboard/current-weight rules are defined.
+- Dashboard, AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
+- Water, exercise, and meal logging models/APIs are intentionally deferred.

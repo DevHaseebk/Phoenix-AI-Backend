@@ -1,37 +1,44 @@
 # Current Task
 
-Task: Onboarding Module 5.2-5.3
+Task: Core Logs WeightLog 7.1-7.2
 
 Status: Completed
 
 Scope:
 
-- Task 5.2 Onboarding Prisma schema and migration
-- Task 5.3 Onboarding service/controller/DTOs and target calculation
-- Migration `20260705180108_onboarding_profile` applied
-- `UserProfile` Prisma model added
-- `UserOnboarding` Prisma model added
-- Onboarding endpoints complete:
-  - `GET /api/v1/onboarding`
-  - `POST /api/v1/onboarding/step`
-  - `POST /api/v1/onboarding/complete`
-- Deterministic backend calorie/protein target calculation
-- Step draft is saved and safe draft state is returned
-- Completion returns first-win options:
-  - `UPDATE_WEIGHT`
-  - `LOG_FIRST_MEAL`
-  - `LOG_WATER`
-  - `OPEN_DASHBOARD`
+- Task 7.1 WeightLog Prisma schema and migration
+- Task 7.2 WeightLog service/controller/DTOs
+- Migration `20260706072703_weight_log` applied
+- `WeightLog` Prisma model added
+- `WeightLogSource` enum added:
+  - `MANUAL`
+  - `ONBOARDING`
+  - `IMPORTED`
+- `User.weightLogs` relation added
+- WeightLog indexes added:
+  - `userId`
+  - `loggedAt`
+  - `userId + loggedAt`
+- WeightLog endpoints complete:
+  - `GET /api/v1/logs/weight`
+  - `POST /api/v1/logs/weight`
+- Both routes are protected by `JwtAuthGuard` and use `@CurrentUser()`
+- `POST /api/v1/logs/weight` creates logs for the current user only
+- `GET /api/v1/logs/weight` lists the current user's logs only
+- `UserProfile.currentWeightKg` update is deferred until dashboard/current-weight synchronization rules are defined
+- `.gitignore` fixed from `logs` to `/logs` so `src/logs` files are not hidden from Git
 - Validation passed:
   - lint
   - build
-  - unit tests: 9 suites / 34 tests
-  - e2e tests: 4 suites / 24 tests
+  - unit tests: 11 suites / 40 tests
+  - e2e tests: 5 suites / 29 tests
 
 Out of scope:
 
+- WaterLog
+- ExerciseLog
+- MealLog
 - Dashboard
-- Logs
 - AI
 - WhatsApp
 - Admin

@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, and Onboarding Tasks 5.2-5.3 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, and Core Logs WeightLog Tasks 7.1-7.2 are complete.
 
 The NestJS app now starts with:
 
@@ -41,7 +41,12 @@ The NestJS app now starts with:
 - onboarding completion endpoint at `POST /api/v1/onboarding/complete`,
 - deterministic backend calorie/protein target calculation,
 - safe onboarding draft continuation state,
-- MVP first-win options after onboarding completion.
+- MVP first-win options after onboarding completion,
+- `WeightLog` Prisma model,
+- `WeightLogSource` enum,
+- `User.weightLogs` relation,
+- weight log endpoint at `GET /api/v1/logs/weight`,
+- weight log endpoint at `POST /api/v1/logs/weight`.
 
 Current Prisma schema contains:
 
@@ -56,6 +61,8 @@ Current Prisma schema contains:
 - `GoalPace`
 - `ActivityLevel`
 - `OnboardingStatus`
+- `WeightLog`
+- `WeightLogSource`
 
 `FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
@@ -63,10 +70,10 @@ User/Profile Tasks 4.1-4.4 required no Prisma schema changes and no migrations. 
 
 Latest Prisma schema change:
 
-- `UserProfile`
-- `UserOnboarding`
-- Onboarding enums
-- Migration file: `20260705180108_onboarding_profile`
+- `WeightLog`
+- `WeightLogSource`
+- `User.weightLogs`
+- Migration file: `20260706072703_weight_log`
 - Migration was applied successfully.
 - `npx prisma migrate status` reports the database schema is up to date.
 
@@ -88,7 +95,7 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Plan the Dashboard module or the next MVP logging foundation module that Dashboard needs.
+Implement the next Core Logs slice before Dashboard: WaterLog schema/migration and API planning/implementation.
 
 ## Guardrails
 
@@ -98,6 +105,7 @@ Plan the Dashboard module or the next MVP logging foundation module that Dashboa
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
 - Do not add Dashboard, Logs, AI, WhatsApp, or Admin modules until explicitly approved.
+- Logs module currently contains WeightLog only; do not add WaterLog, ExerciseLog, or MealLog unless explicitly approved.
 
 ## Auth Notes
 
@@ -135,6 +143,17 @@ Plan the Dashboard module or the next MVP logging foundation module that Dashboa
   - `LOG_WATER`
   - `OPEN_DASHBOARD`
 
+## Core Logs Notes
+
+- `GET /api/v1/logs/weight` lists the authenticated user's weight logs only.
+- `POST /api/v1/logs/weight` creates a weight log for the authenticated user only.
+- Both WeightLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `WeightLogSource` values are `MANUAL`, `ONBOARDING`, and `IMPORTED`.
+- `source` is not client-controlled for `POST /api/v1/logs/weight`; the service defaults it to `MANUAL`.
+- WeightLog safe responses include `id`, `weightKg`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
+- `UserProfile.currentWeightKg` is not updated by WeightLog creation yet. Synchronization is deferred until dashboard/current-weight rules are defined.
+- `.gitignore` was fixed from `logs` to `/logs` so `src/logs` source files are not hidden from Git.
+
 ## Prisma Notes
 
 - Prisma CLI and Client are pinned to `6.19.3` because Prisma 7 requires a newer Node version than the current local runtime.
@@ -142,11 +161,12 @@ Plan the Dashboard module or the next MVP logging foundation module that Dashboa
 - Migration applied: `20260703131635_auth_3_1_user_refresh_token`.
 - Migration applied: `20260705170000_auth_3_3_login_device_type`.
 - Migration applied: `20260705180108_onboarding_profile`.
+- Migration applied: `20260706072703_weight_log`.
 
 ## Validation Notes
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed with 9 suites / 34 tests.
-- `npm run test:e2e` passed with 4 suites / 24 tests.
-- No current blocker remains from Authentication, User/Profile, or Onboarding Tasks 5.2-5.3.
+- `npm run test` passed with 11 suites / 40 tests.
+- `npm run test:e2e` passed with 5 suites / 29 tests.
+- No current blocker remains from Authentication, User/Profile, Onboarding, or Core Logs WeightLog Tasks 7.1-7.2.
