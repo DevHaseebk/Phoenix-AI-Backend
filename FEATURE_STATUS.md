@@ -47,11 +47,17 @@
 | WeightLog schema | Complete | Added `WeightLog`, `WeightLogSource`, and `User.weightLogs` relation |
 | WeightLog migration | Complete | Migration `20260706072703_weight_log` applied |
 | WeightLog indexes | Complete | Added `userId`, `loggedAt`, and `userId + loggedAt` indexes |
-| Logs module | Partial | Weight logs implemented only |
 | WeightLog create API | Complete | `POST /api/v1/logs/weight`, protected by JWT auth, current user only |
 | WeightLog list API | Complete | `GET /api/v1/logs/weight`, protected by JWT auth, current user only |
 | WeightLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
 | Git ignore for logs source | Complete | `.gitignore` changed from `logs` to `/logs` so `src/logs` is tracked |
+| WaterLog schema | Complete | Added `WaterLog`, `WaterLogSource`, and `User.waterLogs` relation |
+| WaterLog migration | Complete | Migration `20260706074733_water_log` applied |
+| WaterLog indexes | Complete | Added `userId`, `loggedAt`, and `userId + loggedAt` indexes |
+| Logs module | Partial | WeightLog and WaterLog implemented only |
+| WaterLog create API | Complete | `POST /api/v1/logs/water`, protected by JWT auth, current user only |
+| WaterLog list API | Complete | `GET /api/v1/logs/water`, protected by JWT auth, current user only |
+| WaterLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
 
 ## Not Started
 
@@ -65,7 +71,6 @@
 | Email verification | Not started | Future auth implementation task |
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
 | Dashboard module | Not started | Future MVP module |
-| WaterLog model/API | Not started | Future core logs task |
 | ExerciseLog model/API | Not started | Future core logs task |
 | MealLog model/API | Not started | Future core logs task |
 | AI provider logic | Not started | Future task |

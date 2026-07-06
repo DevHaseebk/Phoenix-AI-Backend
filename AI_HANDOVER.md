@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, and Core Logs WeightLog Tasks 7.1-7.2 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, and Core Logs WaterLog Tasks 7.3-7.4 are complete.
 
 The NestJS app now starts with:
 
@@ -46,7 +46,12 @@ The NestJS app now starts with:
 - `WeightLogSource` enum,
 - `User.weightLogs` relation,
 - weight log endpoint at `GET /api/v1/logs/weight`,
-- weight log endpoint at `POST /api/v1/logs/weight`.
+- weight log endpoint at `POST /api/v1/logs/weight`,
+- `WaterLog` Prisma model,
+- `WaterLogSource` enum,
+- `User.waterLogs` relation,
+- water log endpoint at `GET /api/v1/logs/water`,
+- water log endpoint at `POST /api/v1/logs/water`.
 
 Current Prisma schema contains:
 
@@ -63,6 +68,8 @@ Current Prisma schema contains:
 - `OnboardingStatus`
 - `WeightLog`
 - `WeightLogSource`
+- `WaterLog`
+- `WaterLogSource`
 
 `FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
@@ -70,10 +77,10 @@ User/Profile Tasks 4.1-4.4 required no Prisma schema changes and no migrations. 
 
 Latest Prisma schema change:
 
-- `WeightLog`
-- `WeightLogSource`
-- `User.weightLogs`
-- Migration file: `20260706072703_weight_log`
+- `WaterLog`
+- `WaterLogSource`
+- `User.waterLogs`
+- Migration file: `20260706074733_water_log`
 - Migration was applied successfully.
 - `npx prisma migrate status` reports the database schema is up to date.
 
@@ -95,7 +102,7 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Implement the next Core Logs slice before Dashboard: WaterLog schema/migration and API planning/implementation.
+Implement the next Core Logs slice before Dashboard: ExerciseLog schema/migration planning and implementation.
 
 ## Guardrails
 
@@ -105,7 +112,7 @@ Implement the next Core Logs slice before Dashboard: WaterLog schema/migration a
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
 - Do not add Dashboard, Logs, AI, WhatsApp, or Admin modules until explicitly approved.
-- Logs module currently contains WeightLog only; do not add WaterLog, ExerciseLog, or MealLog unless explicitly approved.
+- Logs module currently contains WeightLog and WaterLog only; do not add ExerciseLog or MealLog unless explicitly approved.
 
 ## Auth Notes
 
@@ -152,6 +159,13 @@ Implement the next Core Logs slice before Dashboard: WaterLog schema/migration a
 - `source` is not client-controlled for `POST /api/v1/logs/weight`; the service defaults it to `MANUAL`.
 - WeightLog safe responses include `id`, `weightKg`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
 - `UserProfile.currentWeightKg` is not updated by WeightLog creation yet. Synchronization is deferred until dashboard/current-weight rules are defined.
+- `GET /api/v1/logs/water` lists the authenticated user's water logs only.
+- `POST /api/v1/logs/water` creates a water log for the authenticated user only.
+- Both WaterLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `WaterLogSource` values are `MANUAL`, `QUICK_ADD`, and `IMPORTED`.
+- `source` is not client-controlled for `POST /api/v1/logs/water`; the service defaults it to `MANUAL`.
+- WaterLog safe responses include `id`, `amountMl`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
+- Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
 - `.gitignore` was fixed from `logs` to `/logs` so `src/logs` source files are not hidden from Git.
 
 ## Prisma Notes
@@ -162,11 +176,12 @@ Implement the next Core Logs slice before Dashboard: WaterLog schema/migration a
 - Migration applied: `20260705170000_auth_3_3_login_device_type`.
 - Migration applied: `20260705180108_onboarding_profile`.
 - Migration applied: `20260706072703_weight_log`.
+- Migration applied: `20260706074733_water_log`.
 
 ## Validation Notes
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed with 11 suites / 40 tests.
-- `npm run test:e2e` passed with 5 suites / 29 tests.
-- No current blocker remains from Authentication, User/Profile, Onboarding, or Core Logs WeightLog Tasks 7.1-7.2.
+- `npm run test` passed with 13 suites / 46 tests.
+- `npm run test:e2e` passed with 6 suites / 34 tests.
+- No current blocker remains from Authentication, User/Profile, Onboarding, Core Logs WeightLog, or Core Logs WaterLog Tasks 7.1-7.4.

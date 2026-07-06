@@ -53,6 +53,12 @@ enum WeightLogSource {
   IMPORTED
 }
 
+enum WaterLogSource {
+  MANUAL
+  QUICK_ADD
+  IMPORTED
+}
+
 model FoundationMigrationCheck {
   id        String   @id @default(uuid())
   label     String   @unique
@@ -75,6 +81,7 @@ model User {
   profile         UserProfile?
   onboarding      UserOnboarding?
   weightLogs      WeightLog[]
+  waterLogs       WaterLog[]
   refreshTokens   RefreshToken[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
@@ -138,6 +145,23 @@ model WeightLog {
   @@index([loggedAt])
   @@index([userId, loggedAt])
   @@map("weight_logs")
+}
+
+model WaterLog {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountMl  Int
+  loggedAt  DateTime
+  source    WaterLogSource @default(MANUAL)
+  note      String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([loggedAt])
+  @@index([userId, loggedAt])
+  @@map("water_logs")
 }
 
 model RefreshToken {

@@ -65,11 +65,30 @@
   - `npm run build`
   - `npm run test` with 11 suites / 40 tests
   - `npm run test:e2e` with 5 suites / 29 tests
+- Core Logs WaterLog Tasks 7.3-7.4 are complete:
+  - `WaterLog` model
+  - `WaterLogSource` enum
+  - `User.waterLogs` relation
+  - `GET /api/v1/logs/water`
+  - `POST /api/v1/logs/water`
+- Migration `20260706074733_water_log` is applied.
+- WaterLog indexes are added:
+  - `userId`
+  - `loggedAt`
+  - `userId + loggedAt`
+- WaterLog routes are protected by `JwtAuthGuard` and use `@CurrentUser()`.
+- WaterLog create/list operations are scoped to the current user.
+- Core Logs WaterLog Tasks 7.3-7.4 validation passed:
+  - `npm run lint`
+  - `npm run build`
+  - `npm run test` with 13 suites / 46 tests
+  - `npm run test:e2e` with 6 suites / 34 tests
 
 ## Deferred By Scope
 
 - Refresh endpoint, token rotation, logout, Google OAuth, password reset, and email verification are intentionally deferred.
 - Rate limiting/brute-force protection is intentionally deferred as future security hardening before public beta.
 - `UserProfile.currentWeightKg` synchronization from WeightLog is deferred until dashboard/current-weight rules are defined.
+- Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
 - Dashboard, AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
-- Water, exercise, and meal logging models/APIs are intentionally deferred.
+- Exercise and meal logging models/APIs are intentionally deferred.

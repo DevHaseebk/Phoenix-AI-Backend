@@ -413,7 +413,7 @@ npx prisma migrate status
 - AI provider logic
 - WhatsApp webhook
 - Admin modules
-- Water, exercise, or meal logging models
+- Water, exercise, or meal logging models at that time; WaterLog was later added by Core Logs Tasks 7.3-7.4
 
 ## 2026-07-06 - Core Logs WeightLog Tasks 7.1-7.2
 
@@ -464,7 +464,60 @@ npx prisma migrate status
 
 ### Intentionally not implemented
 
-- WaterLog
+- ExerciseLog
+- MealLog
+- Dashboard
+- AI provider logic
+- WhatsApp webhook
+- Admin modules
+
+## 2026-07-06 - Core Logs WaterLog Tasks 7.3-7.4
+
+### What changed
+
+- Added `WaterLogSource` enum:
+  - `MANUAL`
+  - `QUICK_ADD`
+  - `IMPORTED`
+- Added `WaterLog` Prisma model.
+- Added `User.waterLogs` relation.
+- Added WaterLog indexes:
+  - `userId`
+  - `loggedAt`
+  - `userId + loggedAt`
+- Created and applied Prisma migration:
+  - `20260706074733_water_log`
+- Added WaterLog service/controller/DTOs.
+- Added protected WaterLog endpoints:
+  - `GET /api/v1/logs/water`
+  - `POST /api/v1/logs/water`
+- Both WaterLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `POST /api/v1/logs/water` creates water logs for the authenticated user only.
+- `GET /api/v1/logs/water` lists water logs for the authenticated user only.
+- Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
+
+### Prisma commands executed
+
+```bash
+npx prisma format
+npx prisma migrate status
+npx prisma migrate dev --name water_log
+npx prisma migrate status
+```
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 13 suites
+  - 46 tests
+- `npm run test:e2e` passed:
+  - 6 suites
+  - 34 tests
+
+### Intentionally not implemented
+
 - ExerciseLog
 - MealLog
 - Dashboard

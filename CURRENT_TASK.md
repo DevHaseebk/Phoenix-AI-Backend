@@ -1,41 +1,40 @@
 # Current Task
 
-Task: Core Logs WeightLog 7.1-7.2
+Task: Core Logs WaterLog 7.3-7.4
 
 Status: Completed
 
 Scope:
 
-- Task 7.1 WeightLog Prisma schema and migration
-- Task 7.2 WeightLog service/controller/DTOs
-- Migration `20260706072703_weight_log` applied
-- `WeightLog` Prisma model added
-- `WeightLogSource` enum added:
+- Task 7.3 WaterLog Prisma schema and migration
+- Task 7.4 WaterLog service/controller/DTOs
+- Migration `20260706074733_water_log` applied
+- `WaterLog` Prisma model added
+- `WaterLogSource` enum added:
   - `MANUAL`
-  - `ONBOARDING`
+  - `QUICK_ADD`
   - `IMPORTED`
-- `User.weightLogs` relation added
-- WeightLog indexes added:
+- `User.waterLogs` relation added
+- WaterLog indexes added:
   - `userId`
   - `loggedAt`
   - `userId + loggedAt`
-- WeightLog endpoints complete:
-  - `GET /api/v1/logs/weight`
-  - `POST /api/v1/logs/weight`
+- WaterLog endpoints complete:
+  - `GET /api/v1/logs/water`
+  - `POST /api/v1/logs/water`
 - Both routes are protected by `JwtAuthGuard` and use `@CurrentUser()`
-- `POST /api/v1/logs/weight` creates logs for the current user only
-- `GET /api/v1/logs/weight` lists the current user's logs only
-- `UserProfile.currentWeightKg` update is deferred until dashboard/current-weight synchronization rules are defined
-- `.gitignore` fixed from `logs` to `/logs` so `src/logs` files are not hidden from Git
+- `POST /api/v1/logs/water` creates water logs for the current user only
+- `GET /api/v1/logs/water` lists the current user's water logs only
+- Dashboard summaries and profile fields are not updated by WaterLog APIs yet
+- WeightLog and WaterLog are complete
 - Validation passed:
   - lint
   - build
-  - unit tests: 11 suites / 40 tests
-  - e2e tests: 5 suites / 29 tests
+  - unit tests: 13 suites / 46 tests
+  - e2e tests: 6 suites / 34 tests
 
 Out of scope:
 
-- WaterLog
 - ExerciseLog
 - MealLog
 - Dashboard
