@@ -83,6 +83,28 @@
   - `npm run build`
   - `npm run test` with 13 suites / 46 tests
   - `npm run test:e2e` with 6 suites / 34 tests
+- Core Logs ExerciseLog Tasks 7.5-7.6 are complete:
+  - `ExerciseLog` model
+  - `ExerciseLogSource` enum
+  - `ExerciseType` enum
+  - `User.exerciseLogs` relation
+  - `GET /api/v1/logs/exercise`
+  - `POST /api/v1/logs/exercise`
+- Migration `20260706114403_exercise_log` is applied.
+- ExerciseLog indexes are added:
+  - `userId`
+  - `loggedAt`
+  - `userId + loggedAt`
+- ExerciseLog routes are protected by `JwtAuthGuard` and use `@CurrentUser()`.
+- ExerciseLog create/list operations are scoped to the current user.
+- `GET /api/v1/logs/exercise` supports `exerciseType` filtering.
+- `distanceKm` Decimal is safely serialized as a plain number.
+- Manual Postman verification was completed successfully by the developer for implemented APIs.
+- Core Logs ExerciseLog Tasks 7.5-7.6 validation passed:
+  - `npm run lint`
+  - `npm run build`
+  - `npm run test` with 15 suites / 52 tests
+  - `npm run test:e2e` with 7 suites / 40 tests
 
 ## Deferred By Scope
 
@@ -90,5 +112,6 @@
 - Rate limiting/brute-force protection is intentionally deferred as future security hardening before public beta.
 - `UserProfile.currentWeightKg` synchronization from WeightLog is deferred until dashboard/current-weight rules are defined.
 - Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
+- Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
 - Dashboard, AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
-- Exercise and meal logging models/APIs are intentionally deferred.
+- Meal logging models/APIs are intentionally deferred.

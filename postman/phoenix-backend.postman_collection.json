@@ -1,0 +1,617 @@
+{
+  "info": {
+    "_postman_id": "0e3a36a2-7c4f-4f70-a6db-8a05f66a8a62",
+    "name": "Project Phoenix Backend",
+    "description": "Curated Postman collection for currently implemented Project Phoenix backend APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "paste-access-token-here",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "paste-refresh-token-here",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Checks API health and database connectivity.",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Checks whether backend dependencies are ready.",
+            "url": {
+              "raw": "{{baseUrl}}/health/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Haseeb Khan\",\n  \"email\": \"haseeb@example.com\",\n  \"password\": \"StrongPassword123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a new email/password account.",
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "signup"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const data = json && json.data ? json.data : {};",
+                  "  const tokens = data.tokens || {};",
+                  "  const accessToken = data.accessToken || tokens.accessToken;",
+                  "  const refreshToken = data.refreshToken || tokens.refreshToken;",
+                  "",
+                  "  if (accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', accessToken);",
+                  "    if (pm.environment) pm.environment.set('accessToken', accessToken);",
+                  "  }",
+                  "",
+                  "  if (refreshToken) {",
+                  "    pm.collectionVariables.set('refreshToken', refreshToken);",
+                  "    if (pm.environment) pm.environment.set('refreshToken', refreshToken);",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Defensive by design: do not fail if response is not JSON or token shape changes.",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"haseeb@example.com\",\n  \"password\": \"StrongPassword123\",\n  \"device\": {\n    \"deviceName\": \"Postman on Desktop\",\n    \"deviceType\": \"WEB\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Logs in with email/password and stores tokens when present in the response.",
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Me / Profile",
+      "item": [
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Returns the authenticated user's safe profile data.",
+            "url": {
+              "raw": "{{baseUrl}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Haseeb Updated\",\n  \"phone\": \"+923001234567\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Updates basic profile fields for the authenticated user.",
+            "url": {
+              "raw": "{{baseUrl}}/me/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me",
+                "profile"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"StrongPassword123\",\n  \"newPassword\": \"NewStrongPassword123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Changes the authenticated user's password.",
+            "url": {
+              "raw": "{{baseUrl}}/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me",
+                "password"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Onboarding",
+      "item": [
+        {
+          "name": "Get Onboarding State",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Returns existing onboarding state or a default not-started state.",
+            "url": {
+              "raw": "{{baseUrl}}/onboarding",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "onboarding"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Save Onboarding Step",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"BASIC_INFO\",\n  \"data\": {\n    \"gender\": \"MALE\",\n    \"heightCm\": 188,\n    \"currentWeightKg\": 150,\n    \"targetWeightKg\": 100\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Saves one onboarding step and returns updated onboarding state.",
+            "url": {
+              "raw": "{{baseUrl}}/onboarding/step",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "onboarding",
+                "step"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Onboarding",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gender\": \"MALE\",\n  \"dateOfBirth\": \"1998-01-01\",\n  \"heightCm\": 188,\n  \"currentWeightKg\": 150,\n  \"targetWeightKg\": 100,\n  \"goalType\": \"LOSE_WEIGHT\",\n  \"goalPace\": \"BALANCED\",\n  \"activityLevel\": \"SEDENTARY\",\n  \"timezone\": \"Asia/Karachi\",\n  \"preferredLanguage\": \"en\",\n  \"foodPreferences\": [\"CHICKEN\", \"BEEF\"],\n  \"foodDislikes\": [\"OATS\"],\n  \"commitmentAccepted\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Completes onboarding, calculates targets, and returns first-win options.",
+            "url": {
+              "raw": "{{baseUrl}}/onboarding/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "onboarding",
+                "complete"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Weight Logs",
+      "item": [
+        {
+          "name": "List Weight Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Lists the authenticated user's weight logs.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/weight?from=2026-07-01T00:00:00.000Z&to=2026-07-06T23:59:59.999Z&limit=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "weight"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-07-01T00:00:00.000Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-07-06T23:59:59.999Z"
+                },
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Weight Log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weightKg\": 149.8,\n  \"loggedAt\": \"2026-07-06T08:00:00.000Z\",\n  \"note\": \"Morning weight\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a weight log for the authenticated user.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/weight",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "weight"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Water Logs",
+      "item": [
+        {
+          "name": "List Water Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Lists the authenticated user's water logs.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/water?from=2026-07-01T00:00:00.000Z&to=2026-07-06T23:59:59.999Z&limit=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "water"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-07-01T00:00:00.000Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-07-06T23:59:59.999Z"
+                },
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Water Log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountMl\": 500,\n  \"loggedAt\": \"2026-07-06T08:00:00.000Z\",\n  \"note\": \"Morning water\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a water log for the authenticated user.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/water",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "water"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Exercise Logs",
+      "item": [
+        {
+          "name": "List Exercise Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Lists the authenticated user's exercise logs with optional type filtering.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/exercise?from=2026-07-01T00:00:00.000Z&to=2026-07-06T23:59:59.999Z&limit=30&exerciseType=WALKING",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "exercise"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-07-01T00:00:00.000Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-07-06T23:59:59.999Z"
+                },
+                {
+                  "key": "limit",
+                  "value": "30"
+                },
+                {
+                  "key": "exerciseType",
+                  "value": "WALKING"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Exercise Log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exerciseType\": \"WALKING\",\n  \"durationMinutes\": 30,\n  \"steps\": 4000,\n  \"distanceKm\": 3.2,\n  \"estimatedCaloriesBurned\": 220,\n  \"loggedAt\": \"2026-07-06T08:00:00.000Z\",\n  \"note\": \"Morning walk\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates an exercise log for the authenticated user.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/exercise",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "exercise"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

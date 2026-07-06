@@ -464,7 +464,71 @@ npx prisma migrate status
 
 ### Intentionally not implemented
 
-- ExerciseLog
+- MealLog
+- Dashboard
+- AI provider logic
+- WhatsApp webhook
+- Admin modules
+
+## 2026-07-06 - Core Logs ExerciseLog Tasks 7.5-7.6
+
+### What changed
+
+- Added `ExerciseLogSource` enum:
+  - `MANUAL`
+  - `DEVICE`
+  - `IMPORTED`
+- Added `ExerciseType` enum:
+  - `WALKING`
+  - `RUNNING`
+  - `CYCLING`
+  - `STRENGTH`
+  - `CARDIO`
+  - `SPORTS`
+  - `STEPS`
+  - `OTHER`
+- Added `ExerciseLog` Prisma model.
+- Added `User.exerciseLogs` relation.
+- Added ExerciseLog indexes:
+  - `userId`
+  - `loggedAt`
+  - `userId + loggedAt`
+- Created and applied Prisma migration:
+  - `20260706114403_exercise_log`
+- Added ExerciseLog service/controller/DTOs.
+- Added protected ExerciseLog endpoints:
+  - `GET /api/v1/logs/exercise`
+  - `POST /api/v1/logs/exercise`
+- Both ExerciseLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `POST /api/v1/logs/exercise` creates exercise logs for the authenticated user only.
+- `GET /api/v1/logs/exercise` lists exercise logs for the authenticated user only.
+- `GET /api/v1/logs/exercise` supports `exerciseType` filtering.
+- `distanceKm` Decimal values are safely serialized as plain numbers.
+- Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
+- Manual Postman verification was completed successfully by the developer for implemented APIs.
+
+### Prisma commands executed
+
+```bash
+npx prisma format
+npx prisma migrate status
+npx prisma migrate dev --name exercise_log
+npx prisma migrate status
+```
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 15 suites
+  - 52 tests
+- `npm run test:e2e` passed:
+  - 7 suites
+  - 40 tests
+
+### Intentionally not implemented
+
 - MealLog
 - Dashboard
 - AI provider logic

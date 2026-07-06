@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, and Core Logs WaterLog Tasks 7.3-7.4 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, and Core Logs ExerciseLog Tasks 7.5-7.6 are complete.
 
 The NestJS app now starts with:
 
@@ -51,7 +51,13 @@ The NestJS app now starts with:
 - `WaterLogSource` enum,
 - `User.waterLogs` relation,
 - water log endpoint at `GET /api/v1/logs/water`,
-- water log endpoint at `POST /api/v1/logs/water`.
+- water log endpoint at `POST /api/v1/logs/water`,
+- `ExerciseLog` Prisma model,
+- `ExerciseLogSource` enum,
+- `ExerciseType` enum,
+- `User.exerciseLogs` relation,
+- exercise log endpoint at `GET /api/v1/logs/exercise`,
+- exercise log endpoint at `POST /api/v1/logs/exercise`.
 
 Current Prisma schema contains:
 
@@ -70,6 +76,9 @@ Current Prisma schema contains:
 - `WeightLogSource`
 - `WaterLog`
 - `WaterLogSource`
+- `ExerciseLog`
+- `ExerciseLogSource`
+- `ExerciseType`
 
 `FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
@@ -77,10 +86,11 @@ User/Profile Tasks 4.1-4.4 required no Prisma schema changes and no migrations. 
 
 Latest Prisma schema change:
 
-- `WaterLog`
-- `WaterLogSource`
-- `User.waterLogs`
-- Migration file: `20260706074733_water_log`
+- `ExerciseLog`
+- `ExerciseLogSource`
+- `ExerciseType`
+- `User.exerciseLogs`
+- Migration file: `20260706114403_exercise_log`
 - Migration was applied successfully.
 - `npx prisma migrate status` reports the database schema is up to date.
 
@@ -102,7 +112,7 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Implement the next Core Logs slice before Dashboard: ExerciseLog schema/migration planning and implementation.
+Implement the next Core Logs slice before Dashboard: MealLog/Food logging schema planning.
 
 ## Guardrails
 
@@ -111,8 +121,8 @@ Implement the next Core Logs slice before Dashboard: ExerciseLog schema/migratio
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
-- Do not add Dashboard, Logs, AI, WhatsApp, or Admin modules until explicitly approved.
-- Logs module currently contains WeightLog and WaterLog only; do not add ExerciseLog or MealLog unless explicitly approved.
+- Do not add Dashboard, MealLog, AI, WhatsApp, or Admin modules until explicitly approved.
+- Logs module currently contains WeightLog, WaterLog, and ExerciseLog only; do not add MealLog unless explicitly approved.
 
 ## Auth Notes
 
@@ -166,7 +176,17 @@ Implement the next Core Logs slice before Dashboard: ExerciseLog schema/migratio
 - `source` is not client-controlled for `POST /api/v1/logs/water`; the service defaults it to `MANUAL`.
 - WaterLog safe responses include `id`, `amountMl`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
 - Dashboard summaries and profile fields are not updated by WaterLog APIs yet.
+- `GET /api/v1/logs/exercise` lists the authenticated user's exercise logs only and supports `exerciseType` filtering.
+- `POST /api/v1/logs/exercise` creates an exercise log for the authenticated user only.
+- Both ExerciseLog routes use `JwtAuthGuard` and `@CurrentUser()`.
+- `ExerciseLogSource` values are `MANUAL`, `DEVICE`, and `IMPORTED`.
+- `ExerciseType` values are `WALKING`, `RUNNING`, `CYCLING`, `STRENGTH`, `CARDIO`, `SPORTS`, `STEPS`, and `OTHER`.
+- `source` is not client-controlled for `POST /api/v1/logs/exercise`; the service defaults it to `MANUAL`.
+- ExerciseLog safe responses include `id`, `exerciseType`, `durationMinutes`, `steps`, `distanceKm`, `estimatedCaloriesBurned`, `loggedAt`, `source`, `note`, `createdAt`, and `updatedAt`.
+- `distanceKm` Decimal is serialized as a plain number.
+- Dashboard summaries and profile fields are not updated by ExerciseLog APIs yet.
 - `.gitignore` was fixed from `logs` to `/logs` so `src/logs` source files are not hidden from Git.
+- Manual Postman verification was completed successfully by the developer for implemented APIs.
 
 ## Prisma Notes
 
@@ -177,11 +197,12 @@ Implement the next Core Logs slice before Dashboard: ExerciseLog schema/migratio
 - Migration applied: `20260705180108_onboarding_profile`.
 - Migration applied: `20260706072703_weight_log`.
 - Migration applied: `20260706074733_water_log`.
+- Migration applied: `20260706114403_exercise_log`.
 
 ## Validation Notes
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed with 13 suites / 46 tests.
-- `npm run test:e2e` passed with 6 suites / 34 tests.
-- No current blocker remains from Authentication, User/Profile, Onboarding, Core Logs WeightLog, or Core Logs WaterLog Tasks 7.1-7.4.
+- `npm run test` passed with 15 suites / 52 tests.
+- `npm run test:e2e` passed with 7 suites / 40 tests.
+- No current blocker remains from Authentication, User/Profile, Onboarding, or Core Logs Weight/Water/Exercise Tasks 7.1-7.6.

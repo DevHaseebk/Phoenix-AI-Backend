@@ -54,10 +54,18 @@
 | WaterLog schema | Complete | Added `WaterLog`, `WaterLogSource`, and `User.waterLogs` relation |
 | WaterLog migration | Complete | Migration `20260706074733_water_log` applied |
 | WaterLog indexes | Complete | Added `userId`, `loggedAt`, and `userId + loggedAt` indexes |
-| Logs module | Partial | WeightLog and WaterLog implemented only |
 | WaterLog create API | Complete | `POST /api/v1/logs/water`, protected by JWT auth, current user only |
 | WaterLog list API | Complete | `GET /api/v1/logs/water`, protected by JWT auth, current user only |
 | WaterLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
+| ExerciseLog schema | Complete | Added `ExerciseLog`, `ExerciseLogSource`, `ExerciseType`, and `User.exerciseLogs` relation |
+| ExerciseLog migration | Complete | Migration `20260706114403_exercise_log` applied |
+| ExerciseLog indexes | Complete | Added `userId`, `loggedAt`, and `userId + loggedAt` indexes |
+| Logs module | Partial | WeightLog, WaterLog, and ExerciseLog implemented only |
+| ExerciseLog create API | Complete | `POST /api/v1/logs/exercise`, protected by JWT auth, current user only |
+| ExerciseLog list API | Complete | `GET /api/v1/logs/exercise`, protected by JWT auth, current user only; supports `exerciseType` filter |
+| ExerciseLog distance serialization | Complete | `distanceKm` Decimal is returned as a plain number |
+| ExerciseLog validation | Complete | Latest lint, build, unit, and e2e tests passed |
+| Postman manual verification | Complete | Developer manually verified implemented APIs with Postman |
 
 ## Not Started
 
@@ -71,7 +79,6 @@
 | Email verification | Not started | Future auth implementation task |
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
 | Dashboard module | Not started | Future MVP module |
-| ExerciseLog model/API | Not started | Future core logs task |
 | MealLog model/API | Not started | Future core logs task |
 | AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
