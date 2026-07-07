@@ -2,7 +2,7 @@
 
 ## Current State
 
-Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, Core Logs ExerciseLog Tasks 7.5-7.6, Core Logs MealLog Tasks 8.2-8.4, Dashboard Tasks 9.2-9.3, and Auth Session Tasks 10.1-10.2 are complete.
+Authentication Module Task 3.3, User/Profile Tasks 4.1-4.4, Onboarding Tasks 5.2-5.3, Core Logs WeightLog Tasks 7.1-7.2, Core Logs WaterLog Tasks 7.3-7.4, Core Logs ExerciseLog Tasks 7.5-7.6, Core Logs MealLog Tasks 8.2-8.4, Dashboard Tasks 9.2-9.3, Auth Session Tasks 10.1-10.2, and Backend Task 6.1 AI Chat Foundation with Gemini are complete.
 
 The NestJS app now starts with:
 
@@ -73,7 +73,13 @@ The NestJS app now starts with:
 - meal log endpoint at `PATCH /api/v1/logs/meals/:id`,
 - meal log endpoint at `DELETE /api/v1/logs/meals/:id`,
 - dashboard today endpoint at `GET /api/v1/dashboard/today`,
-- dashboard summary endpoint at `GET /api/v1/dashboard/summary`.
+- dashboard summary endpoint at `GET /api/v1/dashboard/summary`,
+- AI chat endpoint at `POST /api/v1/ai/chat`,
+- AI meal estimate endpoint at `POST /api/v1/ai/meal-estimate`,
+- AI meal confirm endpoint at `POST /api/v1/ai/meal-confirm`,
+- AI conversation list endpoint at `GET /api/v1/ai/conversations`,
+- AI conversation detail endpoint at `GET /api/v1/ai/conversations/:id`,
+- AI conversation archive endpoint at `DELETE /api/v1/ai/conversations/:id`.
 
 Current Prisma schema contains:
 
@@ -101,6 +107,13 @@ Current Prisma schema contains:
 - `MealLogSource`
 - `MealLogStatus`
 - `ConfidenceLevel`
+- `AiConversation`
+- `AiMessage`
+- `AiMealEstimate`
+- `AiConversationType`
+- `AiConversationStatus`
+- `AiMessageRole`
+- `AiMealEstimateStatus`
 
 `FoundationMigrationCheck` exists only to verify migrations and should not be treated as an application domain model.
 
@@ -138,7 +151,7 @@ Latest Prisma schema change:
 
 ## Next Recommended Task
 
-Start frontend/user app integration against the completed MVP backend APIs, unless the product roadmap requires backend AI provider planning first.
+Start frontend/user app integration for the completed backend APIs, or build the frontend AI chat UI if the investor-demo path prioritizes AI.
 
 ## Guardrails
 
@@ -149,7 +162,7 @@ Start frontend/user app integration against the completed MVP backend APIs, unle
 - Do not expand Prisma beyond the approved next schema task.
 - Keep future work inside `backend` unless explicitly instructed otherwise.
 - Add rate limiting/brute-force protection before public beta.
-- Do not add AI, WhatsApp, or Admin modules until explicitly approved.
+- Do not add WhatsApp or Admin modules until explicitly approved.
 - Logs module currently contains WeightLog, WaterLog, ExerciseLog, and MealLog.
 
 ## Auth Notes
@@ -276,13 +289,33 @@ Start frontend/user app integration against the completed MVP backend APIs, unle
 - Migration applied: `20260706074733_water_log`.
 - Migration applied: `20260706114403_exercise_log`.
 - Migration applied: `20260706123309_meal_log`.
+- Migration applied: `20260707071051_ai_chat_foundation`.
 - No Dashboard migration exists because Dashboard Tasks 9.2-9.3 did not require schema changes.
+
+## AI Notes
+
+- Gemini is the primary AI provider via `@google/genai`.
+- No OpenAI implementation is present.
+- `GEMINI_API_KEY` is optional in local/development so the app can run without a live AI key.
+- Production requires `GEMINI_API_KEY` when `AI_ENABLED=true`.
+- `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
+- `AI_PROVIDER` defaults to `gemini`.
+- `AI_ENABLED` defaults to `true`.
+- `AI_TIMEOUT_MS` defaults to `30000`.
+- Local/dev fallback is deterministic and clearly labeled as local fallback; it does not pretend to be a real AI estimate.
+- `POST /api/v1/ai/chat` saves user and assistant messages in an owned `AiConversation`.
+- `POST /api/v1/ai/meal-estimate` uses structured Gemini JSON, normalizes/sanity-checks nutrition values, stores `AiMealEstimate`, and does not create a `MealLog`.
+- `POST /api/v1/ai/meal-confirm` verifies estimate ownership, rejects already confirmed/non-confirmable estimates, creates a `MealLog` with source `AI_CHAT`, creates `MealLogItem` rows, and marks the estimate `CONFIRMED`.
+- `AiMealEstimate.mealLogId` is a plain `String?` MVP link; no strict `MealLog` relation was added.
+- AI safety guardrails block unsafe dieting, eating disorder, self-harm, and medication dosing prompts.
+- AI endpoint rate limiting remains a public-beta hardening TODO.
 
 ## Validation Notes
 
 - `npm run lint` passed.
 - `npm run build` passed.
-- `npm run test` passed with 20 suites / 93 tests.
-- `npm run test:e2e` passed with 9 suites / 76 tests.
+- `npm run test` passed with 24 suites / 104 tests.
+- `npx jest --config ./test/jest-e2e.json --runInBand` passed with 10 suites / 80 tests.
+- `npx prisma migrate status` reports the database schema is up to date.
 - First parallel test run had Argon2-related timeout pressure, but the required suites passed when rerun sequentially.
 - No current blocker remains from Authentication, Auth Session, User/Profile, Onboarding, Core Logs Weight/Water/Exercise/Meal Tasks 7.1-8.4, or Dashboard Tasks 9.2-9.3.

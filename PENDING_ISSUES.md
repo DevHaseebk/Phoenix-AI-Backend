@@ -7,6 +7,8 @@
 - Prisma 7 could not be installed on the current Node runtime (`v22.0.0`) because it requires Node `20.19+`, `22.12+`, or `24+`. Prisma was pinned to `6.19.3` for compatibility.
 - npm reported the same 5 high severity audit findings and same ESLint transitive engine warning after installing `argon2`.
 - npm reported the same 5 high severity audit findings and same ESLint transitive engine warning after installing `@nestjs/jwt`.
+- npm reported the same 5 high severity audit findings and same ESLint transitive engine warning after installing `@google/genai`.
+- AI endpoint rate limiting is not implemented yet and should be added before public beta.
 
 ## Resolved
 
@@ -184,4 +186,4 @@
 - Profile fields are not updated by WaterLog APIs yet.
 - Profile fields are not updated by ExerciseLog APIs yet.
 - Profile fields are not updated by MealLog APIs yet.
-- AI provider, WhatsApp webhook, and admin modules are intentionally deferred.
+- WhatsApp webhook and admin modules are intentionally deferred.

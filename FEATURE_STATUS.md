@@ -90,6 +90,15 @@
 | Dashboard decimal serialization | Complete | Decimal-backed values are returned as plain numbers |
 | Dashboard validation | Complete | Latest lint, build, unit, and e2e tests passed |
 | Auth session validation | Complete | Latest lint, build, unit tests, and e2e tests passed; first parallel run had Argon2 timeout pressure but sequential reruns passed |
+| AI config | Complete | Gemini primary provider; local/dev fallback when AI disabled or key missing; production requires key when enabled |
+| AI persistence schema | Complete | Added `AiConversation`, `AiMessage`, `AiMealEstimate`, and AI enums |
+| AI migration | Complete | Migration `20260707071051_ai_chat_foundation` applied |
+| AI Chat API | Complete | `POST /api/v1/ai/chat`, protected by JWT auth, saves conversation/messages |
+| AI Meal Estimate API | Complete | `POST /api/v1/ai/meal-estimate`, protected by JWT auth, uses Gemini structured output and does not create MealLog |
+| AI Meal Confirm API | Complete | `POST /api/v1/ai/meal-confirm`, protected by JWT auth, creates `MealLog` with `AI_CHAT` source |
+| AI Conversations APIs | Complete | `GET /api/v1/ai/conversations`, `GET /api/v1/ai/conversations/:id`, `DELETE /api/v1/ai/conversations/:id` |
+| AI safety guardrails | Complete | Blocks unsafe dieting, eating disorder, self-harm, and medication dosing prompts |
+| AI validation | Complete | Lint, build, unit tests, e2e tests, and Prisma migrate status passed |
 
 ## Not Started
 
@@ -102,6 +111,5 @@
 | Rate limiting/brute-force protection | Not started | Future security hardening before public beta |
 | Security headers / Helmet | Not started | Future public-beta hardening if not already implemented |
 | Production CORS allowlist verification | Not started | Future deployment hardening |
-| AI provider logic | Not started | Future task |
 | WhatsApp webhook | Not started | Future task |
 | Admin modules | Not started | Future task |

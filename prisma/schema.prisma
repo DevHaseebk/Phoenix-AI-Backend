@@ -104,6 +104,29 @@ enum ConfidenceLevel {
   VERIFIED
 }
 
+enum AiConversationType {
+  COACHING
+  MEAL_LOGGING
+}
+
+enum AiConversationStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum AiMealEstimateStatus {
+  DRAFT
+  NEEDS_CLARIFICATION
+  CONFIRMED
+  DISCARDED
+}
+
 model FoundationMigrationCheck {
   id        String   @id @default(uuid())
   label     String   @unique
@@ -113,12 +136,12 @@ model FoundationMigrationCheck {
 }
 
 model User {
-  id              String          @id @default(uuid())
-  email           String?         @unique
+  id              String           @id @default(uuid())
+  email           String?          @unique
   passwordHash    String?
   fullName        String?
-  phone           String?         @unique
-  status          UserStatus      @default(ACTIVE)
+  phone           String?          @unique
+  status          UserStatus       @default(ACTIVE)
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
   lastActiveAt    DateTime?
@@ -129,9 +152,12 @@ model User {
   waterLogs       WaterLog[]
   exerciseLogs    ExerciseLog[]
   mealLogs        MealLog[]
+  aiConversations AiConversation[]
+  aiMessages      AiMessage[]
+  aiMealEstimates AiMealEstimate[]
   refreshTokens   RefreshToken[]
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@index([status])
   @@index([lastActiveAt])
@@ -275,6 +301,82 @@ model MealLogItem {
 
   @@index([mealLogId])
   @@map("meal_log_items")
+}
+
+model AiConversation {
+  id            String               @id @default(uuid())
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String?
+  type          AiConversationType   @default(COACHING)
+  status        AiConversationStatus @default(ACTIVE)
+  messages      AiMessage[]
+  mealEstimates AiMealEstimate[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([updatedAt])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String           @id @default(uuid())
+  conversationId String
+  conversation   AiConversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           AiMessageRole
+  content        String
+  structured     Json?
+  model          String?
+  tokenInput     Int?
+  tokenOutput    Int?
+  latencyMs      Int?
+  safetyFlags    Json?
+  mealEstimates  AiMealEstimate[]
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ai_messages")
+}
+
+model AiMealEstimate {
+  id                     String               @id @default(uuid())
+  userId                 String
+  user                   User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId         String?
+  conversation           AiConversation?      @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  messageId              String?
+  message                AiMessage?           @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  originalText           String
+  mealType               MealType?
+  status                 AiMealEstimateStatus @default(DRAFT)
+  confidenceLevel        ConfidenceLevel
+  confidenceScore        Float?
+  calories               Int?
+  proteinGrams           Float?
+  carbsGrams             Float?
+  fatGrams               Float?
+  fiberGrams             Float?
+  items                  Json
+  clarificationQuestions Json?
+  assumptions            Json?
+  warnings               Json?
+  confirmedAt            DateTime?
+  mealLogId              String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@index([userId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([status])
+  @@map("ai_meal_estimates")
 }
 
 model RefreshToken {

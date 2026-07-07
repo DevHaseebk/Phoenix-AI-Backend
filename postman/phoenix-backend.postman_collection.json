@@ -2,23 +2,43 @@
   "info": {
     "_postman_id": "0e3a36a2-7c4f-4f70-a6db-8a05f66a8a62",
     "name": "Project Phoenix Backend",
-    "description": "Curated Postman collection for currently implemented Project Phoenix backend APIs.",
+    "description": "Curated Postman collection for Project Phoenix backend APIs. Login stores accessToken/refreshToken automatically; protected requests use Bearer {{accessToken}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3000/api/v1",
+      "value": "http://localhost:4000/api/v1",
       "type": "string"
     },
     {
       "key": "accessToken",
-      "value": "paste-access-token-here",
+      "value": "",
       "type": "string"
     },
     {
       "key": "refreshToken",
-      "value": "paste-refresh-token-here",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "currentUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "conversationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "estimateId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mealLogId",
+      "value": "",
       "type": "string"
     }
   ],
@@ -75,19 +95,11 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Haseeb Khan\",\n  \"email\": \"haseeb@example.com\",\n  \"password\": \"StrongPassword123\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Creates a new email/password account.",
+            "description": "Creates a new email/password account. Signup does not currently return tokens.",
             "url": {
               "raw": "{{baseUrl}}/auth/signup",
               "host": [
@@ -97,6 +109,15 @@
                 "auth",
                 "signup"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Haseeb Khan\",\n  \"email\": \"haseeb@example.com\",\n  \"password\": \"StrongPassword123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -115,18 +136,21 @@
                   "  const tokens = data.tokens || {};",
                   "  const accessToken = data.accessToken || tokens.accessToken;",
                   "  const refreshToken = data.refreshToken || tokens.refreshToken;",
-                  "",
+                  "  const user = data.user || data;",
                   "  if (accessToken) {",
                   "    pm.collectionVariables.set('accessToken', accessToken);",
                   "    if (pm.environment) pm.environment.set('accessToken', accessToken);",
                   "  }",
-                  "",
                   "  if (refreshToken) {",
                   "    pm.collectionVariables.set('refreshToken', refreshToken);",
                   "    if (pm.environment) pm.environment.set('refreshToken', refreshToken);",
                   "  }",
+                  "  if (user && user.id) {",
+                  "    pm.collectionVariables.set('currentUserId', user.id);",
+                  "    if (pm.environment) pm.environment.set('currentUserId', user.id);",
+                  "  }",
                   "} catch (error) {",
-                  "  // Defensive by design: do not fail if response is not JSON or token shape changes.",
+                  "  // Defensive: do not fail if response shape changes or body is not JSON.",
                   "}"
                 ]
               }
@@ -137,19 +161,11 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"haseeb@example.com\",\n  \"password\": \"StrongPassword123\",\n  \"device\": {\n    \"deviceName\": \"Postman on Desktop\",\n    \"deviceType\": \"WEB\"\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Logs in with email/password and defensively stores accessToken and refreshToken when present.",
+            "description": "Logs in and automatically stores accessToken, refreshToken, and currentUserId for protected requests.",
             "url": {
               "raw": "{{baseUrl}}/auth/login",
               "host": [
@@ -159,6 +175,15 @@
                 "auth",
                 "login"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"haseeb@example.com\",\n  \"password\": \"StrongPassword123\",\n  \"device\": {\n    \"deviceName\": \"Postman on Desktop\",\n    \"deviceType\": \"WEB\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -179,7 +204,7 @@
                   "    if (pm.environment) pm.environment.set('accessToken', data.accessToken);",
                   "  }",
                   "} catch (error) {",
-                  "  // Defensive by design: do not fail if response is not JSON or token shape changes.",
+                  "  // Defensive: do not fail if response shape changes or body is not JSON.",
                   "}"
                 ]
               }
@@ -190,19 +215,11 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Uses the opaque refresh token to get a new access token. Refresh token rotation is deferred.",
+            "description": "Uses refreshToken to get and store a new accessToken.",
             "url": {
               "raw": "{{baseUrl}}/auth/refresh",
               "host": [
@@ -212,20 +229,7 @@
                 "auth",
                 "refresh"
               ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
@@ -234,8 +238,38 @@
                   "language": "json"
                 }
               }
-            },
-            "description": "Idempotently revokes the opaque refresh token by setting revokedAt when it exists.",
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  ['accessToken', 'refreshToken'].forEach((key) => {",
+                  "    pm.collectionVariables.unset(key);",
+                  "    if (pm.environment) pm.environment.unset(key);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Revokes refreshToken and clears local Postman token variables on success.",
             "url": {
               "raw": "{{baseUrl}}/auth/logout",
               "host": [
@@ -245,6 +279,15 @@
                 "auth",
                 "logout"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -256,15 +299,27 @@
       "item": [
         {
           "name": "Get Me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try { const data = pm.response.json().data || {}; if (data.id) pm.collectionVariables.set('currentUserId', data.id); } catch (error) {}"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Returns the authenticated user's safe profile data.",
+            "description": "Returns the authenticated user safe profile data.",
             "url": {
               "raw": "{{baseUrl}}/me",
               "host": [
@@ -284,22 +339,15 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               },
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Haseeb Updated\",\n  \"phone\": \"+923001234567\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
             "description": "Updates basic profile fields for the authenticated user.",
             "url": {
               "raw": "{{baseUrl}}/me/profile",
@@ -310,6 +358,15 @@
                 "me",
                 "profile"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Haseeb Updated\",\n  \"phone\": \"+923001234567\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -321,23 +378,16 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               },
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"currentPassword\": \"StrongPassword123\",\n  \"newPassword\": \"NewStrongPassword123\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Changes the authenticated user's password.",
+            "description": "Changes current user password. Existing refresh tokens are revoked by backend.",
             "url": {
               "raw": "{{baseUrl}}/me/password",
               "host": [
@@ -347,6 +397,15 @@
                 "me",
                 "password"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"StrongPassword123\",\n  \"newPassword\": \"NewStrongPassword123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -363,10 +422,11 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Returns existing onboarding state or a default not-started state.",
+            "description": "Returns existing onboarding state or default not-started state.",
             "url": {
               "raw": "{{baseUrl}}/onboarding",
               "host": [
@@ -386,22 +446,15 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               },
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"step\": \"BASIC_INFO\",\n  \"data\": {\n    \"gender\": \"MALE\",\n    \"heightCm\": 188,\n    \"currentWeightKg\": 150,\n    \"targetWeightKg\": 100\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
             "description": "Saves one onboarding step and returns updated onboarding state.",
             "url": {
               "raw": "{{baseUrl}}/onboarding/step",
@@ -412,6 +465,15 @@
                 "onboarding",
                 "step"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"BASIC_INFO\",\n  \"data\": {\n    \"gender\": \"MALE\",\n    \"heightCm\": 188,\n    \"currentWeightKg\": 150,\n    \"targetWeightKg\": 100\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -423,22 +485,15 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               },
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"gender\": \"MALE\",\n  \"dateOfBirth\": \"1998-01-01\",\n  \"heightCm\": 188,\n  \"currentWeightKg\": 150,\n  \"targetWeightKg\": 100,\n  \"goalType\": \"LOSE_WEIGHT\",\n  \"goalPace\": \"BALANCED\",\n  \"activityLevel\": \"SEDENTARY\",\n  \"timezone\": \"Asia/Karachi\",\n  \"preferredLanguage\": \"en\",\n  \"foodPreferences\": [\"CHICKEN\", \"BEEF\"],\n  \"foodDislikes\": [\"OATS\"],\n  \"commitmentAccepted\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
             "description": "Completes onboarding, calculates targets, and returns first-win options.",
             "url": {
               "raw": "{{baseUrl}}/onboarding/complete",
@@ -449,6 +504,15 @@
                 "onboarding",
                 "complete"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gender\": \"MALE\",\n  \"dateOfBirth\": \"1998-01-01\",\n  \"heightCm\": 188,\n  \"currentWeightKg\": 150,\n  \"targetWeightKg\": 100,\n  \"goalType\": \"LOSE_WEIGHT\",\n  \"goalPace\": \"BALANCED\",\n  \"activityLevel\": \"SEDENTARY\",\n  \"timezone\": \"Asia/Karachi\",\n  \"preferredLanguage\": \"en\",\n  \"foodPreferences\": [\n    \"CHICKEN\",\n    \"BEEF\"\n  ],\n  \"foodDislikes\": [\n    \"OATS\"\n  ],\n  \"commitmentAccepted\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -465,12 +529,13 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Lists the authenticated user's weight logs.",
+            "description": "Lists authenticated user weight logs.",
             "url": {
-              "raw": "{{baseUrl}}/logs/weight?from=2026-07-01T00:00:00.000Z&to=2026-07-06T23:59:59.999Z&limit=30",
+              "raw": "{{baseUrl}}/logs/weight?from=2026-07-01T00:00:00.000Z&to=2026-07-31T23:59:59.999Z&limit=30",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -485,7 +550,7 @@
                 },
                 {
                   "key": "to",
-                  "value": "2026-07-06T23:59:59.999Z"
+                  "value": "2026-07-31T23:59:59.999Z"
                 },
                 {
                   "key": "limit",
@@ -503,22 +568,15 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               },
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"weightKg\": 149.8,\n  \"loggedAt\": \"2026-07-06T08:00:00.000Z\",\n  \"note\": \"Morning weight\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
             "description": "Creates a weight log for the authenticated user.",
             "url": {
               "raw": "{{baseUrl}}/logs/weight",
@@ -529,6 +587,15 @@
                 "logs",
                 "weight"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weightKg\": 149.8,\n  \"loggedAt\": \"2026-07-07T08:00:00.000Z\",\n  \"note\": \"Morning weight\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -545,12 +612,13 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Lists the authenticated user's water logs.",
+            "description": "Lists authenticated user water logs.",
             "url": {
-              "raw": "{{baseUrl}}/logs/water?from=2026-07-01T00:00:00.000Z&to=2026-07-06T23:59:59.999Z&limit=30",
+              "raw": "{{baseUrl}}/logs/water?from=2026-07-01T00:00:00.000Z&to=2026-07-31T23:59:59.999Z&limit=30",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -565,7 +633,7 @@
                 },
                 {
                   "key": "to",
-                  "value": "2026-07-06T23:59:59.999Z"
+                  "value": "2026-07-31T23:59:59.999Z"
                 },
                 {
                   "key": "limit",
@@ -583,22 +651,15 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               },
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"amountMl\": 500,\n  \"loggedAt\": \"2026-07-06T08:00:00.000Z\",\n  \"note\": \"Morning water\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
             "description": "Creates a water log for the authenticated user.",
             "url": {
               "raw": "{{baseUrl}}/logs/water",
@@ -609,6 +670,15 @@
                 "logs",
                 "water"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountMl\": 500,\n  \"loggedAt\": \"2026-07-07T08:00:00.000Z\",\n  \"note\": \"Morning water\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
@@ -625,12 +695,13 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Lists the authenticated user's exercise logs with optional type filtering.",
+            "description": "Lists authenticated user exercise logs with optional type filtering.",
             "url": {
-              "raw": "{{baseUrl}}/logs/exercise?from=2026-07-01T00:00:00.000Z&to=2026-07-06T23:59:59.999Z&limit=30&exerciseType=WALKING",
+              "raw": "{{baseUrl}}/logs/exercise?from=2026-07-01T00:00:00.000Z&to=2026-07-31T23:59:59.999Z&limit=30&exerciseType=WALKING",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -645,7 +716,7 @@
                 },
                 {
                   "key": "to",
-                  "value": "2026-07-06T23:59:59.999Z"
+                  "value": "2026-07-31T23:59:59.999Z"
                 },
                 {
                   "key": "limit",
@@ -667,22 +738,15 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               },
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"exerciseType\": \"WALKING\",\n  \"durationMinutes\": 30,\n  \"steps\": 4000,\n  \"distanceKm\": 3.2,\n  \"estimatedCaloriesBurned\": 220,\n  \"loggedAt\": \"2026-07-06T08:00:00.000Z\",\n  \"note\": \"Morning walk\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
             "description": "Creates an exercise log for the authenticated user.",
             "url": {
               "raw": "{{baseUrl}}/logs/exercise",
@@ -692,6 +756,205 @@
               "path": [
                 "logs",
                 "exercise"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exerciseType\": \"WALKING\",\n  \"durationMinutes\": 30,\n  \"steps\": 4000,\n  \"distanceKm\": 3.2,\n  \"estimatedCaloriesBurned\": 220,\n  \"loggedAt\": \"2026-07-07T08:00:00.000Z\",\n  \"note\": \"Morning walk\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Meal Logs",
+      "item": [
+        {
+          "name": "List Meal Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "description": "Lists authenticated user meal logs with items.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/meals?from=2026-07-01T00:00:00.000Z&to=2026-07-31T23:59:59.999Z&limit=30&mealType=LUNCH",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "meals"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-07-01T00:00:00.000Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-07-31T23:59:59.999Z"
+                },
+                {
+                  "key": "limit",
+                  "value": "30"
+                },
+                {
+                  "key": "mealType",
+                  "value": "LUNCH"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Meal Log",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try { const data = pm.response.json().data || {}; if (data.id) pm.collectionVariables.set('mealLogId', data.id); } catch (error) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Creates a manual meal log and stores mealLogId for detail/update/delete requests.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/meals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "meals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mealType\": \"LUNCH\",\n  \"loggedAt\": \"2026-07-07T12:30:00.000Z\",\n  \"description\": \"Chicken biryani\",\n  \"note\": \"Home cooked\",\n  \"items\": [\n    {\n      \"foodName\": \"Chicken Biryani\",\n      \"portionLabel\": \"medium plate\",\n      \"quantity\": 1,\n      \"calories\": 750,\n      \"proteinGrams\": 35,\n      \"carbsGrams\": 85,\n      \"fatGrams\": 28\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Meal Log Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "description": "Gets one owned meal log using saved mealLogId.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/meals/{{mealLogId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "meals",
+                "{{mealLogId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Meal Log",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Updates one owned meal log and can replace items.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/meals/{{mealLogId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "meals",
+                "{{mealLogId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mealType\": \"DINNER\",\n  \"description\": \"Updated AI/manual meal\",\n  \"items\": [\n    {\n      \"foodName\": \"Grilled Chicken\",\n      \"portionLabel\": \"1 plate\",\n      \"quantity\": 1,\n      \"calories\": 600,\n      \"proteinGrams\": 40,\n      \"carbsGrams\": 55,\n      \"fatGrams\": 22\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Meal Log",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "description": "Deletes one owned meal log using saved mealLogId.",
+            "url": {
+              "raw": "{{baseUrl}}/logs/meals/{{mealLogId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "meals",
+                "{{mealLogId}}"
               ]
             }
           },
@@ -709,7 +972,8 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
             "description": "Returns today dashboard aggregates for the authenticated user.",
@@ -733,10 +997,11 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Returns dashboard summary aggregates for range=7d.",
+            "description": "Returns dashboard summary for 7 days.",
             "url": {
               "raw": "{{baseUrl}}/dashboard/summary?range=7d",
               "host": [
@@ -763,10 +1028,11 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Returns dashboard summary aggregates for range=30d.",
+            "description": "Returns dashboard summary for 30 days.",
             "url": {
               "raw": "{{baseUrl}}/dashboard/summary?range=30d",
               "host": [
@@ -793,10 +1059,11 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
               }
             ],
-            "description": "Returns dashboard summary aggregates for range=90d.",
+            "description": "Returns dashboard summary for 90 days.",
             "url": {
               "raw": "{{baseUrl}}/dashboard/summary?range=90d",
               "host": [
@@ -811,6 +1078,298 @@
                   "key": "range",
                   "value": "90d"
                 }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AI",
+      "item": [
+        {
+          "name": "AI Chat",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try { const data = pm.response.json().data || {}; if (data.conversationId) pm.collectionVariables.set('conversationId', data.conversationId); } catch (error) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Sends a DailyFit Coach message and stores conversationId.",
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What should I focus on for dinner today?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AI Chat Continue Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try { const data = pm.response.json().data || {}; if (data.conversationId) pm.collectionVariables.set('conversationId', data.conversationId); } catch (error) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Continues the saved AI conversationId.",
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversationId\": \"{{conversationId}}\",\n  \"message\": \"Suggest a high protein dinner under my calorie target.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AI Meal Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const data = pm.response.json().data || {};",
+                  "  if (data.conversationId) pm.collectionVariables.set('conversationId', data.conversationId);",
+                  "  if (data.estimateId) pm.collectionVariables.set('estimateId', data.estimateId);",
+                  "} catch (error) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Estimates meal nutrition and stores conversationId plus estimateId.",
+            "url": {
+              "raw": "{{baseUrl}}/ai/meal-estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "meal-estimate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"One medium plate chicken biryani with raita\",\n  \"mealType\": \"LUNCH\",\n  \"loggedAt\": \"2026-07-07T12:30:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AI Meal Confirm",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try { const data = pm.response.json().data || {}; if (data.id) pm.collectionVariables.set('mealLogId', data.id); } catch (error) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Confirms saved estimateId, creates MealLog, and stores mealLogId.",
+            "url": {
+              "raw": "{{baseUrl}}/ai/meal-confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "meal-confirm"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estimateId\": \"{{estimateId}}\",\n  \"corrections\": {\n    \"mealType\": \"LUNCH\",\n    \"loggedAt\": \"2026-07-07T12:30:00.000Z\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AI Conversations List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "description": "Lists authenticated user AI conversations.",
+            "url": {
+              "raw": "{{baseUrl}}/ai/conversations?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AI Conversation Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "description": "Fetches saved AI conversation with messages.",
+            "url": {
+              "raw": "{{baseUrl}}/ai/conversations/{{conversationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "conversations",
+                "{{conversationId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AI Conversation Archive",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "description": "Archives saved AI conversation.",
+            "url": {
+              "raw": "{{baseUrl}}/ai/conversations/{{conversationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "conversations",
+                "{{conversationId}}"
               ]
             }
           },

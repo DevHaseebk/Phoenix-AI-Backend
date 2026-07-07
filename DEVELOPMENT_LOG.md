@@ -769,9 +769,9 @@ npx prisma migrate status
 - `npm run test` passed:
   - 20 suites
   - 93 tests
-- `npm run test:e2e` passed:
-  - 9 suites
-  - 76 tests
+- `npx jest --config ./test/jest-e2e.json --runInBand` passed:
+  - 10 suites
+  - 80 tests
 - First parallel test run had Argon2-related timeout pressure, but the required suites passed when rerun sequentially.
 
 ### Intentionally not implemented
@@ -783,3 +783,73 @@ npx prisma migrate status
 - Rate limiting/brute-force protection before public beta
 - Security headers / Helmet if not already implemented
 - Production CORS allowlist verification
+
+## 2026-07-07 - Backend Task 6.1 AI Chat Foundation with Gemini
+
+### What changed
+
+- Installed `@google/genai`.
+- Added Gemini-first AI provider architecture:
+  - `AiProvider` interface
+  - `GeminiAiProvider`
+  - `LocalAiProvider`
+- Added AI config defaults:
+  - `GEMINI_MODEL=gemini-2.5-flash`
+  - `AI_PROVIDER=gemini`
+  - `AI_ENABLED=true`
+  - `AI_TIMEOUT_MS=30000`
+- Made `GEMINI_API_KEY` optional in local/dev.
+- Kept production strict: `GEMINI_API_KEY` is required when `AI_ENABLED=true`.
+- Added AI Prisma schema:
+  - `AiConversation`
+  - `AiMessage`
+  - `AiMealEstimate`
+  - `AiConversationType`
+  - `AiConversationStatus`
+  - `AiMessageRole`
+  - `AiMealEstimateStatus`
+- Created and applied Prisma migration:
+  - `20260707071051_ai_chat_foundation`
+- Added protected AI endpoints:
+  - `POST /api/v1/ai/chat`
+  - `POST /api/v1/ai/meal-estimate`
+  - `POST /api/v1/ai/meal-confirm`
+  - `GET /api/v1/ai/conversations`
+  - `GET /api/v1/ai/conversations/:id`
+  - `DELETE /api/v1/ai/conversations/:id`
+- Added Gemini structured-output schema for meal estimation.
+- Added backend normalization/sanity checks for AI meal estimates.
+- Added safety guardrails for self-harm, eating disorder, extreme dieting, and medication dosing prompts.
+- `POST /api/v1/ai/meal-estimate` stores an estimate and does not create `MealLog`.
+- `POST /api/v1/ai/meal-confirm` creates `MealLog` with source `AI_CHAT`, creates items, and marks the estimate `CONFIRMED`.
+- `AiMealEstimate.mealLogId` is stored as `String?` for MVP instead of a strict relation to `MealLog`.
+- Added focused unit tests for safety detection, nutrition sanity checks, local fallback, and meal confirmation.
+
+### Prisma commands executed
+
+```bash
+npx prisma format
+npx prisma migrate dev --name ai_chat_foundation
+npx prisma generate
+```
+
+### Validation
+
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test` passed:
+  - 24 suites
+  - 104 tests
+- `npm run test:e2e` passed:
+  - 9 suites
+  - 76 tests
+- `npx prisma migrate status` reports the database schema is up to date.
+- Jest emitted the existing worker shutdown warning, but all suites passed.
+
+### Intentionally not implemented
+
+- WhatsApp integration
+- Frontend AI chat UI
+- Image meal recognition
+- AI rate limiting
+- OpenAI provider

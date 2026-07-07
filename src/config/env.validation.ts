@@ -15,10 +15,14 @@ const requiredEnvKeys = [
   'JWT_REFRESH_SECRET',
   'JWT_ACCESS_EXPIRES_IN',
   'JWT_REFRESH_EXPIRES_IN',
-  'GEMINI_API_KEY',
 ] as const;
 
 const optionalEnvKeys = [
+  'GEMINI_API_KEY',
+  'GEMINI_MODEL',
+  'AI_PROVIDER',
+  'AI_ENABLED',
+  'AI_TIMEOUT_MS',
   'RESEND_API_KEY',
   'WHATSAPP_VERIFY_TOKEN',
   'WHATSAPP_ACCESS_TOKEN',
@@ -72,6 +76,36 @@ export function validateEnvironment(
     throw new Error('PORT must be a valid TCP port number');
   }
 
+  const aiProvider = getStringValue(config, 'AI_PROVIDER') ?? 'gemini';
+
+  if (!['gemini', 'local'].includes(aiProvider)) {
+    throw new Error('AI_PROVIDER must be one of: gemini, local');
+  }
+
+  const aiEnabled = getStringValue(config, 'AI_ENABLED') ?? 'true';
+
+  if (!['true', 'false'].includes(aiEnabled)) {
+    throw new Error('AI_ENABLED must be either true or false');
+  }
+
+  const aiTimeoutMs = Number(
+    getStringValue(config, 'AI_TIMEOUT_MS') ?? '30000',
+  );
+
+  if (!Number.isInteger(aiTimeoutMs) || aiTimeoutMs < 1000) {
+    throw new Error(
+      'AI_TIMEOUT_MS must be an integer greater than or equal to 1000',
+    );
+  }
+
+  const geminiApiKey = getStringValue(config, 'GEMINI_API_KEY');
+
+  if (nodeEnv === 'production' && aiEnabled === 'true' && !geminiApiKey) {
+    throw new Error(
+      'GEMINI_API_KEY is required in production when AI_ENABLED=true',
+    );
+  }
+
   const optionalValues = Object.fromEntries(
     optionalEnvKeys.map((key) => [key, getStringValue(config, key)]),
   ) as Partial<Record<OptionalEnvKey, string>>;
@@ -91,7 +125,11 @@ export function validateEnvironment(
       config,
       'JWT_REFRESH_EXPIRES_IN',
     ) as string,
-    GEMINI_API_KEY: getStringValue(config, 'GEMINI_API_KEY') as string,
     ...optionalValues,
+    GEMINI_API_KEY: geminiApiKey,
+    GEMINI_MODEL: getStringValue(config, 'GEMINI_MODEL') ?? 'gemini-2.5-flash',
+    AI_PROVIDER: aiProvider,
+    AI_ENABLED: aiEnabled,
+    AI_TIMEOUT_MS: String(aiTimeoutMs),
   };
 }
