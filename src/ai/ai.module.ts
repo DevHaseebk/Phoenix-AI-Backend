@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { DashboardModule } from '../dashboard/dashboard.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AI_PROVIDER } from './ai-provider.interface';
 import { AiController } from './ai.controller';
@@ -9,7 +10,7 @@ import { GeminiAiProvider } from './providers/gemini-ai.provider';
 import { LocalAiProvider } from './providers/local-ai.provider';
 
 @Module({
-  imports: [AuthModule, PrismaModule],
+  imports: [AuthModule, PrismaModule, DashboardModule],
   controllers: [AiController],
   providers: [
     AiService,

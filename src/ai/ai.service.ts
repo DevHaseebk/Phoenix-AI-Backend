@@ -32,6 +32,12 @@ import { dailyFitSystemPrompt } from './prompts/dailyfit-system.prompt';
 import { mealEstimatePrompt } from './prompts/meal-estimate.prompt';
 import { detectSafetyFlags } from './utils/ai-safety.util';
 import { normalizeMealEstimate } from './utils/nutrition-sanity.util';
+import {
+  calculateAge,
+  calculateBmr,
+  calculateTdee,
+} from '../common/utils/health-metrics.util';
+import { DashboardService } from '../dashboard/dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface MealLogItemResponse {
@@ -111,6 +117,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(AI_PROVIDER) private readonly aiProvider: AiProvider,
+    private readonly dashboardService: DashboardService,
   ) {}
 
   async chat(userId: string, dto: ChatDto) {
@@ -151,7 +158,7 @@ export class AiService {
     const context = await this.buildUserContext(userId);
     const providerResponse = await this.aiProvider.generateCoachReply({
       systemPrompt: dailyFitSystemPrompt,
-      userPrompt: `${context}\n\nUser message:\n${dto.message}`,
+      userPrompt: `User context (authoritative app data):\n${context}\n\nUser message:\n${dto.message}`,
       ...this.getProviderConfig(),
     });
     const assistant = await this.saveAssistantMessage({
@@ -213,9 +220,10 @@ export class AiService {
       };
     }
 
+    const context = await this.buildUserContext(userId);
     const providerResponse = await this.aiProvider.generateMealEstimate({
       systemPrompt: mealEstimatePrompt,
-      userPrompt: buildMealEstimatePrompt(dto),
+      userPrompt: `User context (authoritative app data):\n${context}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
       ...this.getProviderConfig(),
     });
     const normalized = normalizeMealEstimate(
@@ -538,44 +546,118 @@ export class AiService {
   }
 
   private async buildUserContext(userId: string): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        fullName: true,
-        profile: {
-          select: {
-            goalType: true,
-            goalPace: true,
-            activityLevel: true,
-            calorieTarget: true,
-            proteinTargetGrams: true,
-            currentWeightKg: true,
-            targetWeightKg: true,
+    const [user, today] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          fullName: true,
+          profile: {
+            select: {
+              gender: true,
+              dateOfBirth: true,
+              heightCm: true,
+              goalType: true,
+              goalPace: true,
+              activityLevel: true,
+              calorieTarget: true,
+              proteinTargetGrams: true,
+              currentWeightKg: true,
+              targetWeightKg: true,
+            },
+          },
+          onboarding: { select: { status: true } },
+          weightLogs: {
+            orderBy: { loggedAt: 'desc' },
+            take: 3,
+            select: { weightKg: true, loggedAt: true },
+          },
+          mealLogs: {
+            orderBy: { loggedAt: 'desc' },
+            take: 3,
+            select: {
+              mealType: true,
+              totalCalories: true,
+              totalProteinGrams: true,
+              loggedAt: true,
+            },
           },
         },
-        onboarding: { select: { status: true } },
-        weightLogs: {
-          orderBy: { loggedAt: 'desc' },
-          take: 3,
-          select: { weightKg: true, loggedAt: true },
-        },
-        mealLogs: {
-          orderBy: { loggedAt: 'desc' },
-          take: 3,
-          select: {
-            mealType: true,
-            totalCalories: true,
-            totalProteinGrams: true,
-            loggedAt: true,
-          },
-        },
-      },
-    });
+      }),
+      this.dashboardService.getToday(userId),
+    ]);
+
+    const profile = user?.profile;
+    // Latest logged weight wins over the onboarding snapshot, matching dashboard behavior.
+    const currentWeightKg =
+      toNullableNumber(user?.weightLogs[0]?.weightKg) ??
+      toNullableNumber(profile?.currentWeightKg);
+    const heightCm = toNullableNumber(profile?.heightCm);
+
+    const missingFields: string[] = [];
+    if (!profile?.gender) missingFields.push('gender');
+    if (!profile?.dateOfBirth) missingFields.push('dateOfBirth');
+    if (heightCm === null) missingFields.push('heightCm');
+    if (currentWeightKg === null) missingFields.push('currentWeightKg');
+    if (!profile?.activityLevel) missingFields.push('activityLevel');
+
+    const canComputeBmr =
+      Boolean(profile?.gender) &&
+      Boolean(profile?.dateOfBirth) &&
+      heightCm !== null &&
+      currentWeightKg !== null;
+    const rawBmr = canComputeBmr
+      ? calculateBmr({
+          gender: profile!.gender!,
+          dateOfBirth: profile!.dateOfBirth!,
+          heightCm: heightCm,
+          weightKg: currentWeightKg,
+        })
+      : null;
+    const tdeeKcal =
+      rawBmr !== null && profile?.activityLevel
+        ? Math.round(calculateTdee(rawBmr, profile.activityLevel))
+        : null;
 
     return JSON.stringify({
       fullName: user?.fullName,
-      profile: user?.profile,
       onboardingStatus: user?.onboarding?.status,
+      profile: profile
+        ? {
+            gender: profile.gender,
+            ageYears: profile.dateOfBirth
+              ? calculateAge(profile.dateOfBirth)
+              : null,
+            heightCm,
+            currentWeightKg,
+            targetWeightKg: toNullableNumber(profile.targetWeightKg),
+            goalType: profile.goalType,
+            goalPace: profile.goalPace,
+            activityLevel: profile.activityLevel,
+            calorieTarget: toNullableNumber(profile.calorieTarget),
+            proteinTargetGrams: toNullableNumber(profile.proteinTargetGrams),
+          }
+        : null,
+      healthMetrics: {
+        formula: 'Mifflin-St Jeor',
+        bmrKcal: rawBmr === null ? null : Math.round(rawBmr),
+        tdeeKcal,
+        missingFields,
+      },
+      today: {
+        date: today.date,
+        timezone: today.timezone,
+        caloriesConsumed: today.todayProgress.calories.consumed,
+        calorieTarget: today.todayProgress.calories.target,
+        caloriesRemaining: today.todayProgress.calories.remaining,
+        proteinConsumedGrams: today.todayProgress.protein.consumedGrams,
+        proteinTargetGrams: today.todayProgress.protein.targetGrams,
+        proteinRemainingGrams: today.todayProgress.protein.remainingGrams,
+        waterConsumedMl: today.todayProgress.water.consumedMl,
+        waterTargetMl: today.todayProgress.water.targetMl,
+        exerciseMinutes: today.todayProgress.exercise.durationMinutes,
+        exerciseCaloriesBurned:
+          today.todayProgress.exercise.estimatedCaloriesBurned,
+      },
       recentWeightLogs: user?.weightLogs.map((log) => ({
         weightKg: Number(log.weightKg),
         loggedAt: log.loggedAt,
@@ -611,6 +693,12 @@ function buildMealEstimatePrompt(dto: MealEstimateDto): string {
     mealType: dto.mealType ?? null,
     loggedAt: dto.loggedAt ?? null,
   });
+}
+
+function toNullableNumber(
+  value: Prisma.Decimal | number | null | undefined,
+): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 function extractEstimateItems(

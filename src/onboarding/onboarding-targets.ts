@@ -1,4 +1,8 @@
 import { ActivityLevel, Gender, GoalPace, GoalType } from '@prisma/client';
+import {
+  calculateBmr,
+  calculateTdee,
+} from '../common/utils/health-metrics.util';
 
 export interface TargetCalculationInput {
   gender: Gender;
@@ -16,13 +20,6 @@ export interface TargetCalculationResult {
   proteinTargetGrams: number;
 }
 
-const activityMultipliers: Record<ActivityLevel, number> = {
-  SEDENTARY: 1.2,
-  LIGHTLY_ACTIVE: 1.375,
-  MODERATELY_ACTIVE: 1.55,
-  VERY_ACTIVE: 1.725,
-};
-
 const paceAdjustments: Record<GoalPace, number> = {
   SLOW: 250,
   BALANCED: 500,
@@ -32,15 +29,13 @@ const paceAdjustments: Record<GoalPace, number> = {
 export function calculateOnboardingTargets(
   input: TargetCalculationInput,
 ): TargetCalculationResult {
-  const age = calculateAge(input.dateOfBirth);
-  const sexAdjustment = input.gender === Gender.FEMALE ? -161 : 5;
-  // Mifflin-St Jeor BMR with a neutral male adjustment for OTHER/PREFER_NOT_TO_SAY.
-  const bmr =
-    10 * input.currentWeightKg +
-    6.25 * input.heightCm -
-    5 * age +
-    sexAdjustment;
-  const maintenance = bmr * activityMultipliers[input.activityLevel];
+  const bmr = calculateBmr({
+    gender: input.gender,
+    dateOfBirth: input.dateOfBirth,
+    heightCm: input.heightCm,
+    weightKg: input.currentWeightKg,
+  });
+  const maintenance = calculateTdee(bmr, input.activityLevel);
   const adjustment = paceAdjustments[input.goalPace];
   const calorieTarget = clampCalories(
     input.goalType === GoalType.LOSE_WEIGHT
@@ -60,19 +55,6 @@ export function calculateOnboardingTargets(
     calorieTarget: Math.round(calorieTarget / 10) * 10,
     proteinTargetGrams,
   };
-}
-
-function calculateAge(dateOfBirth: Date): number {
-  const today = new Date();
-  let age = today.getUTCFullYear() - dateOfBirth.getUTCFullYear();
-  const monthDelta = today.getUTCMonth() - dateOfBirth.getUTCMonth();
-  const dayDelta = today.getUTCDate() - dateOfBirth.getUTCDate();
-
-  if (monthDelta < 0 || (monthDelta === 0 && dayDelta < 0)) {
-    age -= 1;
-  }
-
-  return clamp(age, 13, 100);
 }
 
 function clampCalories(calories: number, gender: Gender): number {

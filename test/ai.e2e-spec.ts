@@ -33,6 +33,10 @@ describe('AI (e2e)', () => {
   const estimateFindFirst = jest.fn();
   const estimateUpdate = jest.fn();
   const mealLogCreate = jest.fn();
+  const mealLogFindMany = jest.fn();
+  const weightLogFindFirst = jest.fn();
+  const waterLogFindMany = jest.fn();
+  const exerciseLogFindMany = jest.fn();
   const transaction = jest.fn();
   const generateCoachReply = jest.fn();
   const generateMealEstimate = jest.fn();
@@ -52,7 +56,10 @@ describe('AI (e2e)', () => {
       findFirst: estimateFindFirst,
       update: estimateUpdate,
     },
-    mealLog: { create: mealLogCreate },
+    mealLog: { create: mealLogCreate, findMany: mealLogFindMany },
+    weightLog: { findFirst: weightLogFindFirst },
+    waterLog: { findMany: waterLogFindMany },
+    exerciseLog: { findMany: exerciseLogFindMany },
   };
   const estimateId = '11111111-1111-4111-8111-111111111111';
   const provider = {
@@ -63,6 +70,10 @@ describe('AI (e2e)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockActiveUser();
+    mealLogFindMany.mockResolvedValue([]);
+    weightLogFindFirst.mockResolvedValue(null);
+    waterLogFindMany.mockResolvedValue([]);
+    exerciseLogFindMany.mockResolvedValue([]);
     conversationCreate.mockResolvedValue({
       id: 'conversation-id',
       type: 'COACHING',

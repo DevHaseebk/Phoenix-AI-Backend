@@ -1,14 +1,23 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  ActivityLevel,
   AiMealEstimateStatus,
   ConfidenceLevel,
+  Gender,
+  GoalPace,
+  GoalType,
   MealLogSource,
   MealLogStatus,
   MealType,
   Prisma,
   UserStatus,
 } from '@prisma/client';
+import {
+  calculateBmr,
+  calculateTdee,
+} from '../common/utils/health-metrics.util';
+import { DashboardService } from '../dashboard/dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiProvider } from './ai-provider.interface';
 import { AiService } from './ai.service';
@@ -56,6 +65,28 @@ describe('AiService', () => {
     generateCoachReply,
     generateMealEstimate,
   } as unknown as AiProvider;
+  const dashboardGetToday = jest.fn();
+  const dashboardService = {
+    getToday: dashboardGetToday,
+  } as unknown as DashboardService;
+
+  function createService(): AiService {
+    return new AiService(prisma, config, provider, dashboardService);
+  }
+
+  function extractContextJson(userPrompt: string): Record<string, unknown> {
+    const contextText = userPrompt
+      .split(/\n\n(?:User message|Meal request):/)[0]
+      .replace('User context (authoritative app data):\n', '');
+
+    return JSON.parse(contextText) as Record<string, unknown>;
+  }
+
+  function getSentUserPrompt(mockFn: jest.Mock): string {
+    const calls = mockFn.mock.calls as Array<[{ userPrompt: string }]>;
+
+    return calls[0][0].userPrompt;
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -68,6 +99,18 @@ describe('AiService', () => {
       onboarding: null,
       weightLogs: [],
       mealLogs: [],
+    });
+    dashboardGetToday.mockResolvedValue(
+      buildTodayResponse({
+        caloriesConsumed: 0,
+        calorieTarget: null,
+        caloriesRemaining: null,
+      }),
+    );
+    generateCoachReply.mockResolvedValue({
+      content: 'Coach reply',
+      model: 'gemini-2.5-flash',
+      latencyMs: 10,
     });
     conversationCreate.mockResolvedValue({
       id: 'conversation-id',
@@ -100,7 +143,7 @@ describe('AiService', () => {
   });
 
   it('short-circuits unsafe chat prompts and stores a safety response', async () => {
-    const service = new AiService(prisma, config, provider);
+    const service = createService();
     const response = await service.chat('user-id', {
       message: 'Can I eat 500 calories and use ozempic dose?',
     });
@@ -175,7 +218,7 @@ describe('AiService', () => {
       ],
     });
 
-    const service = new AiService(prisma, config, provider);
+    const service = createService();
     const response = await service.confirmMeal('user-id', {
       estimateId: 'estimate-id',
       corrections: { loggedAt: loggedAt.toISOString() },
@@ -215,12 +258,177 @@ describe('AiService', () => {
   it('rejects confirming another user or missing estimate', async () => {
     estimateFindFirst.mockResolvedValue(null);
 
-    const service = new AiService(prisma, config, provider);
+    const service = createService();
 
     await expect(
       service.confirmMeal('user-id', { estimateId: 'other-estimate-id' }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(mealLogCreate).not.toHaveBeenCalled();
+  });
+
+  it('includes precomputed BMR/TDEE in the coach context for a full profile', async () => {
+    const dateOfBirth = new Date('1998-01-01');
+    userFindUnique.mockResolvedValue({
+      id: 'user-id',
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      fullName: 'Haseeb',
+      profile: {
+        gender: Gender.MALE,
+        dateOfBirth,
+        heightCm: new Prisma.Decimal('188'),
+        currentWeightKg: new Prisma.Decimal('88'),
+        targetWeightKg: new Prisma.Decimal('60'),
+        goalType: GoalType.LOSE_WEIGHT,
+        goalPace: GoalPace.BALANCED,
+        activityLevel: ActivityLevel.SEDENTARY,
+        calorieTarget: new Prisma.Decimal('1800'),
+        proteinTargetGrams: new Prisma.Decimal('96'),
+      },
+      onboarding: { status: 'COMPLETED' },
+      weightLogs: [],
+      mealLogs: [],
+    });
+
+    const service = createService();
+    await service.chat('user-id', { message: 'mera bmr kia hai?' });
+
+    const context = extractContextJson(getSentUserPrompt(generateCoachReply));
+    const healthMetrics = context.healthMetrics as {
+      bmrKcal: number;
+      tdeeKcal: number;
+      missingFields: string[];
+    };
+    const expectedBmr = calculateBmr({
+      gender: Gender.MALE,
+      dateOfBirth,
+      heightCm: 188,
+      weightKg: 88,
+    });
+
+    expect(healthMetrics.bmrKcal).toBe(Math.round(expectedBmr));
+    expect(healthMetrics.tdeeKcal).toBe(
+      Math.round(calculateTdee(expectedBmr, ActivityLevel.SEDENTARY)),
+    );
+    expect(healthMetrics.missingFields).toEqual([]);
+    expect((context.profile as { heightCm: number }).heightCm).toBe(188);
+    expect((context.profile as { gender: string }).gender).toBe('MALE');
+  });
+
+  it('flags only the specific missing profile fields instead of computing', async () => {
+    userFindUnique.mockResolvedValue({
+      id: 'user-id',
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      fullName: 'Haseeb',
+      profile: {
+        gender: Gender.MALE,
+        dateOfBirth: new Date('1998-01-01'),
+        heightCm: null,
+        currentWeightKg: new Prisma.Decimal('88'),
+        targetWeightKg: new Prisma.Decimal('60'),
+        goalType: GoalType.LOSE_WEIGHT,
+        goalPace: GoalPace.BALANCED,
+        activityLevel: ActivityLevel.SEDENTARY,
+        calorieTarget: new Prisma.Decimal('1800'),
+        proteinTargetGrams: new Prisma.Decimal('96'),
+      },
+      onboarding: { status: 'COMPLETED' },
+      weightLogs: [],
+      mealLogs: [],
+    });
+
+    const service = createService();
+    await service.chat('user-id', { message: 'what is my bmr?' });
+
+    const healthMetrics = extractContextJson(
+      getSentUserPrompt(generateCoachReply),
+    ).healthMetrics as {
+      bmrKcal: number | null;
+      tdeeKcal: number | null;
+      missingFields: string[];
+    };
+
+    expect(healthMetrics.bmrKcal).toBeNull();
+    expect(healthMetrics.tdeeKcal).toBeNull();
+    expect(healthMetrics.missingFields).toEqual(['heightCm']);
+  });
+
+  it("includes today's aggregated activity from the dashboard service", async () => {
+    dashboardGetToday.mockResolvedValue(
+      buildTodayResponse({
+        caloriesConsumed: 750,
+        calorieTarget: 1800,
+        caloriesRemaining: 1050,
+      }),
+    );
+
+    const service = createService();
+    await service.chat('user-id', { message: 'how many calories left today?' });
+
+    expect(dashboardGetToday).toHaveBeenCalledWith('user-id');
+
+    const today = extractContextJson(getSentUserPrompt(generateCoachReply))
+      .today as {
+      caloriesConsumed: number;
+      caloriesRemaining: number;
+      waterConsumedMl: number;
+    };
+
+    expect(today.caloriesConsumed).toBe(750);
+    expect(today.caloriesRemaining).toBe(1050);
+    expect(today.waterConsumedMl).toBe(500);
+  });
+
+  it('includes the user context in meal estimate prompts', async () => {
+    generateMealEstimate.mockResolvedValue({
+      content: '{}',
+      structured: {
+        intent: 'MEAL_ESTIMATE',
+        summary: 'Estimate',
+        confidenceLevel: ConfidenceLevel.MEDIUM,
+        confidenceScore: 0.6,
+        mealType: MealType.LUNCH,
+        items: [
+          {
+            name: 'Chicken Biryani',
+            quantityText: 'medium plate',
+            calories: 750,
+            proteinGrams: 35,
+            carbsGrams: 85,
+            fatGrams: 28,
+            fiberGrams: 4,
+            assumptions: [],
+          },
+        ],
+        totals: {
+          calories: 750,
+          proteinGrams: 35,
+          carbsGrams: 85,
+          fatGrams: 28,
+          fiberGrams: 4,
+        },
+        clarificationQuestions: [],
+        assumptions: [],
+        warnings: [],
+        reply: 'Review before saving.',
+      },
+      model: 'gemini-2.5-flash',
+      latencyMs: 20,
+    });
+    (prisma.aiMealEstimate.create as unknown as jest.Mock).mockResolvedValue({
+      id: 'estimate-id',
+      status: AiMealEstimateStatus.DRAFT,
+    });
+
+    const service = createService();
+    await service.estimateMeal('user-id', { message: 'chicken biryani' });
+
+    const userPrompt = getSentUserPrompt(generateMealEstimate);
+
+    expect(userPrompt).toContain('User context (authoritative app data):');
+    expect(userPrompt).toContain('Meal request:');
+    expect(extractContextJson(userPrompt).today).toBeDefined();
   });
 
   it('rejects non-confirmable estimates without items', async () => {
@@ -234,11 +442,41 @@ describe('AiService', () => {
       items: [],
     });
 
-    const service = new AiService(prisma, config, provider);
+    const service = createService();
 
     await expect(
       service.confirmMeal('user-id', { estimateId: 'estimate-id' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(mealLogCreate).not.toHaveBeenCalled();
   });
+
+  function buildTodayResponse(input: {
+    caloriesConsumed: number;
+    calorieTarget: number | null;
+    caloriesRemaining: number | null;
+  }) {
+    return {
+      date: '2026-07-07',
+      timezone: 'Asia/Karachi',
+      todayProgress: {
+        calories: {
+          consumed: input.caloriesConsumed,
+          target: input.calorieTarget,
+          remaining: input.caloriesRemaining,
+        },
+        protein: {
+          consumedGrams: 35,
+          targetGrams: 96,
+          remainingGrams: 61,
+        },
+        water: {
+          consumedMl: 500,
+          targetMl: 3000,
+          remainingMl: 2500,
+        },
+        steps: { count: 0, target: 8000, remaining: 8000 },
+        exercise: { durationMinutes: 0, estimatedCaloriesBurned: 0 },
+      },
+    };
+  }
 });
