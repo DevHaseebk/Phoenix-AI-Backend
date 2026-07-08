@@ -21,6 +21,8 @@ import { DashboardService } from '../dashboard/dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiProvider } from './ai-provider.interface';
 import { AiService } from './ai.service';
+import { MemoryService } from './memory/memory.service';
+import { RagService } from './rag/rag.service';
 
 describe('AiService', () => {
   const userFindUnique = jest.fn();
@@ -28,6 +30,7 @@ describe('AiService', () => {
   const conversationCreate = jest.fn();
   const conversationUpdate = jest.fn();
   const messageCreate = jest.fn();
+  const messageFindMany = jest.fn();
   const estimateFindFirst = jest.fn();
   const estimateUpdate = jest.fn();
   const mealLogCreate = jest.fn();
@@ -43,7 +46,7 @@ describe('AiService', () => {
       update: conversationUpdate,
       findMany: jest.fn(),
     },
-    aiMessage: { create: messageCreate },
+    aiMessage: { create: messageCreate, findMany: messageFindMany },
     aiMealEstimate: {
       findFirst: estimateFindFirst,
       update: estimateUpdate,
@@ -69,9 +72,26 @@ describe('AiService', () => {
   const dashboardService = {
     getToday: dashboardGetToday,
   } as unknown as DashboardService;
+  const retrieveRelevantChunks = jest.fn();
+  const ragService = {
+    retrieveRelevantChunks,
+  } as unknown as RagService;
+  const retrieveRelevantMemories = jest.fn();
+  const extractAndSaveMemory = jest.fn();
+  const memoryService = {
+    retrieveRelevantMemories,
+    extractAndSaveMemory,
+  } as unknown as MemoryService;
 
   function createService(): AiService {
-    return new AiService(prisma, config, provider, dashboardService);
+    return new AiService(
+      prisma,
+      config,
+      provider,
+      dashboardService,
+      ragService,
+      memoryService,
+    );
   }
 
   function extractContextJson(userPrompt: string): Record<string, unknown> {
@@ -107,6 +127,10 @@ describe('AiService', () => {
         caloriesRemaining: null,
       }),
     );
+    retrieveRelevantChunks.mockResolvedValue([]);
+    retrieveRelevantMemories.mockResolvedValue([]);
+    extractAndSaveMemory.mockResolvedValue(undefined);
+    messageFindMany.mockResolvedValue([]);
     generateCoachReply.mockResolvedValue({
       content: 'Coach reply',
       model: 'gemini-2.5-flash',
@@ -429,6 +453,131 @@ describe('AiService', () => {
     expect(userPrompt).toContain('User context (authoritative app data):');
     expect(userPrompt).toContain('Meal request:');
     expect(extractContextJson(userPrompt).today).toBeDefined();
+  });
+
+  it('sends a bounded, truncated conversation-history window with chat', async () => {
+    conversationFindFirst.mockResolvedValue({
+      id: 'conversation-id',
+      type: 'COACHING',
+      status: 'ACTIVE',
+    });
+    // findMany is queried newest-first (desc); the service reverses to oldest-first.
+    messageFindMany.mockResolvedValue([
+      { role: 'USER', content: `biryani ${'x'.repeat(600)}` },
+      { role: 'ASSISTANT', content: 'How was your lunch?' },
+    ]);
+
+    const service = createService();
+    await service.chat('user-id', {
+      conversationId: '2f8f1d41-7b0b-4c2d-88b0-0dfef518a708',
+      message: 'was that too much?',
+    });
+
+    expect(messageFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+    );
+
+    const userPrompt = getSentUserPrompt(generateCoachReply);
+
+    expect(userPrompt).toContain('Recent conversation (oldest first):');
+    // Oldest first after reversing the desc query result.
+    expect(userPrompt.indexOf('USER: biryani')).toBeGreaterThan(
+      userPrompt.indexOf('ASSISTANT: How was your lunch?'),
+    );
+    // 600-char message truncated to 500 + ellipsis.
+    expect(userPrompt).toContain(`biryani ${'x'.repeat(492)}...`);
+    expect(userPrompt).not.toContain('x'.repeat(600));
+  });
+
+  it('includes retrieved knowledge chunks in the chat prompt', async () => {
+    retrieveRelevantChunks.mockResolvedValue([
+      {
+        id: 'chunk-1',
+        content: 'Plateaus of one to two weeks usually need no change.',
+        category: 'PLATEAU_HANDLING',
+        title: 'Plateau Guide',
+        similarity: 0.9,
+      },
+    ]);
+
+    const service = createService();
+    await service.chat('user-id', { message: 'my weight is stuck' });
+
+    expect(retrieveRelevantChunks).toHaveBeenCalledWith(
+      'my weight is stuck',
+      4,
+    );
+
+    const userPrompt = getSentUserPrompt(generateCoachReply);
+
+    expect(userPrompt).toContain('Coaching knowledge');
+    expect(userPrompt).toContain('[PLATEAU_HANDLING | Plateau Guide]');
+    expect(userPrompt).toContain('usually need no change');
+  });
+
+  it('omits the knowledge block when nothing is retrieved', async () => {
+    const service = createService();
+    await service.chat('user-id', { message: 'hello' });
+
+    expect(getSentUserPrompt(generateCoachReply)).not.toContain(
+      'Coaching knowledge',
+    );
+  });
+
+  it('includes retrieved memories as "Known patterns", separate from RAG knowledge', async () => {
+    retrieveRelevantMemories.mockResolvedValue([
+      {
+        id: 'memory-1',
+        category: 'BEHAVIORAL_PATTERN',
+        content: 'Only walks in the evening, never in the morning.',
+        confidence: 0.85,
+        similarity: 0.9,
+      },
+    ]);
+
+    const service = createService();
+    await service.chat('user-id', { message: 'should I walk now?' });
+
+    expect(retrieveRelevantMemories).toHaveBeenCalledWith(
+      'user-id',
+      'should I walk now?',
+      4,
+    );
+
+    const userPrompt = getSentUserPrompt(generateCoachReply);
+
+    expect(userPrompt).toContain('Known patterns about this user');
+    expect(userPrompt).toContain('[BEHAVIORAL_PATTERN]');
+    expect(userPrompt).toContain('Only walks in the evening');
+  });
+
+  it('omits the "Known patterns" block when no memories are retrieved', async () => {
+    const service = createService();
+    await service.chat('user-id', { message: 'hello' });
+
+    expect(getSentUserPrompt(generateCoachReply)).not.toContain(
+      'Known patterns about this user',
+    );
+  });
+
+  it('fires memory extraction after the reply, without blocking the response', async () => {
+    const service = createService();
+    const response = await service.chat('user-id', {
+      message: 'main subah walk nahi karta, sirf raat ko',
+    });
+
+    expect(response.message.content).toBe('Assistant reply');
+    expect(extractAndSaveMemory).toHaveBeenCalledWith(
+      'user-id',
+      expect.stringContaining('main subah walk nahi karta'),
+    );
+    expect(extractAndSaveMemory).toHaveBeenCalledWith(
+      'user-id',
+      expect.stringContaining('ASSISTANT: Coach reply'),
+    );
   });
 
   it('rejects non-confirmable estimates without items', async () => {

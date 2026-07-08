@@ -20,6 +20,7 @@ const requiredEnvKeys = [
 const optionalEnvKeys = [
   'GEMINI_API_KEY',
   'GEMINI_MODEL',
+  'GEMINI_EMBEDDING_MODEL',
   'AI_PROVIDER',
   'AI_ENABLED',
   'AI_TIMEOUT_MS',
@@ -128,6 +129,9 @@ export function validateEnvironment(
     ...optionalValues,
     GEMINI_API_KEY: geminiApiKey,
     GEMINI_MODEL: getStringValue(config, 'GEMINI_MODEL') ?? 'gemini-2.5-flash',
+    GEMINI_EMBEDDING_MODEL:
+      getStringValue(config, 'GEMINI_EMBEDDING_MODEL') ??
+      'gemini-embedding-001',
     AI_PROVIDER: aiProvider,
     AI_ENABLED: aiEnabled,
     AI_TIMEOUT_MS: String(aiTimeoutMs),

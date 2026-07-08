@@ -6,14 +6,19 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AI_PROVIDER } from './ai-provider.interface';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
+import { MemoriesController } from './memory/memories.controller';
+import { MemoryService } from './memory/memory.service';
 import { GeminiAiProvider } from './providers/gemini-ai.provider';
 import { LocalAiProvider } from './providers/local-ai.provider';
+import { RagService } from './rag/rag.service';
 
 @Module({
   imports: [AuthModule, PrismaModule, DashboardModule],
-  controllers: [AiController],
+  controllers: [AiController, MemoriesController],
   providers: [
     AiService,
+    RagService,
+    MemoryService,
     {
       provide: AI_PROVIDER,
       inject: [ConfigService],

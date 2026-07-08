@@ -29,6 +29,7 @@ describe('AI (e2e)', () => {
   const conversationUpdate = jest.fn();
   const conversationFindMany = jest.fn();
   const messageCreate = jest.fn();
+  const messageFindMany = jest.fn();
   const estimateCreate = jest.fn();
   const estimateFindFirst = jest.fn();
   const estimateUpdate = jest.fn();
@@ -50,7 +51,7 @@ describe('AI (e2e)', () => {
       update: conversationUpdate,
       findMany: conversationFindMany,
     },
-    aiMessage: { create: messageCreate },
+    aiMessage: { create: messageCreate, findMany: messageFindMany },
     aiMealEstimate: {
       create: estimateCreate,
       findFirst: estimateFindFirst,
@@ -71,6 +72,7 @@ describe('AI (e2e)', () => {
     jest.clearAllMocks();
     mockActiveUser();
     mealLogFindMany.mockResolvedValue([]);
+    messageFindMany.mockResolvedValue([]);
     weightLogFindFirst.mockResolvedValue(null);
     waterLogFindMany.mockResolvedValue([]);
     exerciseLogFindMany.mockResolvedValue([]);

@@ -32,6 +32,8 @@ import { dailyFitSystemPrompt } from './prompts/dailyfit-system.prompt';
 import { mealEstimatePrompt } from './prompts/meal-estimate.prompt';
 import { detectSafetyFlags } from './utils/ai-safety.util';
 import { normalizeMealEstimate } from './utils/nutrition-sanity.util';
+import { formatMemoryBlock, MemoryService } from './memory/memory.service';
+import { formatKnowledgeBlock, RagService } from './rag/rag.service';
 import {
   calculateAge,
   calculateBmr,
@@ -39,6 +41,14 @@ import {
 } from '../common/utils/health-metrics.util';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+/** Bounded conversation-history window sent to the model per chat turn. */
+const chatHistoryMessageLimit = 10;
+/** Per-message truncation cap so one long message cannot blow up the prompt. */
+const chatHistoryMessageMaxChars = 500;
+const chatKnowledgeTopK = 4;
+const mealEstimateKnowledgeTopK = 3;
+const chatMemoryTopK = 4;
 
 export interface MealLogItemResponse {
   id: string;
@@ -118,6 +128,8 @@ export class AiService {
     private readonly config: ConfigService,
     @Inject(AI_PROVIDER) private readonly aiProvider: AiProvider,
     private readonly dashboardService: DashboardService,
+    private readonly ragService: RagService,
+    private readonly memoryService: MemoryService,
   ) {}
 
   async chat(userId: string, dto: ChatDto) {
@@ -155,10 +167,44 @@ export class AiService {
       };
     }
 
-    const context = await this.buildUserContext(userId);
+    const [context, knowledgeChunks, memories, recentHistory] =
+      await Promise.all([
+        this.buildUserContext(userId),
+        this.ragService.retrieveRelevantChunks(dto.message, chatKnowledgeTopK),
+        this.memoryService.retrieveRelevantMemories(
+          userId,
+          dto.message,
+          chatMemoryTopK,
+        ),
+        this.getRecentConversationHistory(conversation.id, userMessage.id),
+      ]);
+    const promptSections = [
+      `User context (authoritative app data):\n${context}`,
+    ];
+
+    if (knowledgeChunks.length > 0) {
+      promptSections.push(
+        `Coaching knowledge (general reference material retrieved for this message; not user data):\n${formatKnowledgeBlock(knowledgeChunks)}`,
+      );
+    }
+
+    if (memories.length > 0) {
+      promptSections.push(
+        `Known patterns about this user (learned over time, not confirmed for today):\n${formatMemoryBlock(memories)}`,
+      );
+    }
+
+    if (recentHistory) {
+      promptSections.push(
+        `Recent conversation (oldest first):\n${recentHistory}`,
+      );
+    }
+
+    promptSections.push(`User message:\n${dto.message}`);
+
     const providerResponse = await this.aiProvider.generateCoachReply({
       systemPrompt: dailyFitSystemPrompt,
-      userPrompt: `User context (authoritative app data):\n${context}\n\nUser message:\n${dto.message}`,
+      userPrompt: promptSections.join('\n\n'),
       ...this.getProviderConfig(),
     });
     const assistant = await this.saveAssistantMessage({
@@ -173,6 +219,16 @@ export class AiService {
     });
 
     await this.touchConversation(conversation.id);
+
+    // Fire-and-forget: extraction never blocks the response, and never throws.
+    void this.memoryService.extractAndSaveMemory(
+      userId,
+      buildMemoryExtractionTurnText(
+        recentHistory,
+        dto.message,
+        providerResponse.content,
+      ),
+    );
 
     return {
       conversationId: conversation.id,
@@ -220,10 +276,20 @@ export class AiService {
       };
     }
 
-    const context = await this.buildUserContext(userId);
+    const [context, knowledgeChunks] = await Promise.all([
+      this.buildUserContext(userId),
+      this.ragService.retrieveRelevantChunks(
+        dto.message,
+        mealEstimateKnowledgeTopK,
+      ),
+    ]);
+    const knowledgeSection =
+      knowledgeChunks.length > 0
+        ? `\n\nFood knowledge (general reference material retrieved for this meal; not user data):\n${formatKnowledgeBlock(knowledgeChunks)}`
+        : '';
     const providerResponse = await this.aiProvider.generateMealEstimate({
       systemPrompt: mealEstimatePrompt,
-      userPrompt: `User context (authoritative app data):\n${context}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
+      userPrompt: `User context (authoritative app data):\n${context}${knowledgeSection}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
       ...this.getProviderConfig(),
     });
     const normalized = normalizeMealEstimate(
@@ -534,6 +600,35 @@ export class AiService {
     });
   }
 
+  /**
+   * Returns a bounded window of prior messages in this conversation (the
+   * just-saved incoming user message excluded), oldest first, each truncated
+   * so long messages cannot inflate the prompt.
+   */
+  private async getRecentConversationHistory(
+    conversationId: string,
+    excludeMessageId: string,
+  ): Promise<string> {
+    const messages = await this.prisma.aiMessage.findMany({
+      where: {
+        conversationId,
+        id: { not: excludeMessageId },
+        role: { in: [AiMessageRole.USER, AiMessageRole.ASSISTANT] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: chatHistoryMessageLimit,
+      select: { role: true, content: true },
+    });
+
+    return messages
+      .reverse()
+      .map(
+        (message) =>
+          `${message.role}: ${truncateText(message.content, chatHistoryMessageMaxChars)}`,
+      )
+      .join('\n');
+  }
+
   private async ensureActiveUser(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -699,6 +794,24 @@ function toNullableNumber(
   value: Prisma.Decimal | number | null | undefined,
 ): number | null {
   return value === null || value === undefined ? null : Number(value);
+}
+
+function truncateText(text: string, maxChars: number): string {
+  return text.length <= maxChars ? text : `${text.slice(0, maxChars)}...`;
+}
+
+/** Minimal turn text for memory extraction: up to 1 prior exchange + this turn. */
+function buildMemoryExtractionTurnText(
+  recentHistory: string,
+  userMessage: string,
+  assistantReply: string,
+): string {
+  const priorLines = recentHistory
+    ? recentHistory.split('\n').slice(-2).join('\n')
+    : '';
+  const currentTurn = `USER: ${userMessage}\nASSISTANT: ${assistantReply}`;
+
+  return priorLines ? `${priorLines}\n${currentTurn}` : currentTurn;
 }
 
 function extractEstimateItems(

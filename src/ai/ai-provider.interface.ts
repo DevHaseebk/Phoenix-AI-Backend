@@ -15,6 +15,15 @@ export interface AiProviderRequest {
   timeoutMs: number;
 }
 
+export interface AiEmbeddingRequest {
+  inputs: string[];
+  model: string;
+  timeoutMs: number;
+  /** Gemini embedding task type, e.g. RETRIEVAL_DOCUMENT or RETRIEVAL_QUERY. */
+  taskType: 'RETRIEVAL_DOCUMENT' | 'RETRIEVAL_QUERY';
+  outputDimensionality: number;
+}
+
 export interface AiProviderTextResponse {
   content: string;
   model: string;
@@ -58,6 +67,18 @@ export interface AiProviderMealEstimateResponse extends AiProviderTextResponse {
   structured: MealEstimateStructuredOutput;
 }
 
+export interface MemoryExtractionStructuredOutput {
+  shouldSave: boolean;
+  category: string | null;
+  content: string | null;
+  confidence: number | null;
+  isUserVisible: boolean;
+}
+
+export interface AiProviderMemoryExtractionResponse extends AiProviderTextResponse {
+  structured: MemoryExtractionStructuredOutput;
+}
+
 export interface AiProvider {
   generateCoachReply(
     request: AiProviderRequest,
@@ -66,4 +87,19 @@ export interface AiProvider {
   generateMealEstimate(
     request: AiProviderRequest,
   ): Promise<AiProviderMealEstimateResponse>;
+
+  /**
+   * Optional: providers without a real embedding backend (e.g. the local
+   * fallback) omit this, and RAG retrieval is skipped gracefully.
+   */
+  generateEmbeddings?(request: AiEmbeddingRequest): Promise<number[][]>;
+
+  /**
+   * Optional: cheap, structured-output extraction of a single memory-worthy
+   * fact (or none) from a chat turn. Providers without this capability skip
+   * memory extraction gracefully.
+   */
+  extractMemory?(
+    request: AiProviderRequest,
+  ): Promise<AiProviderMemoryExtractionResponse>;
 }
