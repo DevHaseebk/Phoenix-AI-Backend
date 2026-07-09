@@ -8,17 +8,22 @@ import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { MemoriesController } from './memory/memories.controller';
 import { MemoryService } from './memory/memory.service';
+import { NotificationsController } from './nudges/notifications.controller';
+import { NudgeService } from './nudges/nudge.service';
 import { GeminiAiProvider } from './providers/gemini-ai.provider';
 import { LocalAiProvider } from './providers/local-ai.provider';
 import { RagService } from './rag/rag.service';
+import { UserStateService } from './user-state/user-state.service';
 
 @Module({
   imports: [AuthModule, PrismaModule, DashboardModule],
-  controllers: [AiController, MemoriesController],
+  controllers: [AiController, MemoriesController, NotificationsController],
   providers: [
     AiService,
     RagService,
     MemoryService,
+    UserStateService,
+    NudgeService,
     {
       provide: AI_PROVIDER,
       inject: [ConfigService],

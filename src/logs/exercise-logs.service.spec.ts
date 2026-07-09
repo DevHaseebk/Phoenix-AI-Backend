@@ -12,6 +12,8 @@ describe('ExerciseLogsService', () => {
   const userFindUnique = jest.fn();
   const exerciseLogCreate = jest.fn();
   const exerciseLogFindMany = jest.fn();
+  const weightLogFindFirst = jest.fn();
+  const userProfileFindUnique = jest.fn();
   const prisma = {
     user: {
       findUnique: userFindUnique,
@@ -19,6 +21,12 @@ describe('ExerciseLogsService', () => {
     exerciseLog: {
       create: exerciseLogCreate,
       findMany: exerciseLogFindMany,
+    },
+    weightLog: {
+      findFirst: weightLogFindFirst,
+    },
+    userProfile: {
+      findUnique: userProfileFindUnique,
     },
   } as unknown as PrismaService;
 
@@ -29,6 +37,8 @@ describe('ExerciseLogsService', () => {
       status: UserStatus.ACTIVE,
       deletedAt: null,
     });
+    weightLogFindFirst.mockResolvedValue(null);
+    userProfileFindUnique.mockResolvedValue(null);
   });
 
   it('creates a manual exercise log for the current user', async () => {
@@ -91,6 +101,110 @@ describe('ExerciseLogsService', () => {
       createdAt,
       updatedAt,
     });
+  });
+
+  it('auto-calculates calories burned from the latest weight log when not provided', async () => {
+    weightLogFindFirst.mockResolvedValue({
+      weightKg: new Prisma.Decimal('80'),
+    });
+    exerciseLogCreate.mockResolvedValue({
+      id: 'exercise-log-id',
+      exerciseType: ExerciseType.WALKING,
+      durationMinutes: 30,
+      steps: null,
+      distanceKm: null,
+      estimatedCaloriesBurned: 140,
+      loggedAt: new Date('2026-07-06T08:00:00.000Z'),
+      source: ExerciseLogSource.MANUAL,
+      note: null,
+      createdAt: new Date('2026-07-06T08:01:00.000Z'),
+      updatedAt: new Date('2026-07-06T08:01:00.000Z'),
+    });
+
+    const service = new ExerciseLogsService(prisma);
+    await service.create('user-id', {
+      exerciseType: ExerciseType.WALKING,
+      durationMinutes: 30,
+    });
+
+    expect(weightLogFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'user-id' } }),
+    );
+    // 3.5 MET * 80kg * 0.5h = 140
+    expect(exerciseLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          estimatedCaloriesBurned: 140,
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
+
+  it('falls back to the onboarding profile weight when no weight log exists', async () => {
+    weightLogFindFirst.mockResolvedValue(null);
+    userProfileFindUnique.mockResolvedValue({
+      currentWeightKg: new Prisma.Decimal('70'),
+    });
+    exerciseLogCreate.mockResolvedValue({
+      id: 'exercise-log-id',
+      exerciseType: ExerciseType.CYCLING,
+      durationMinutes: 60,
+      steps: null,
+      distanceKm: null,
+      estimatedCaloriesBurned: 525,
+      loggedAt: new Date('2026-07-06T08:00:00.000Z'),
+      source: ExerciseLogSource.MANUAL,
+      note: null,
+      createdAt: new Date('2026-07-06T08:01:00.000Z'),
+      updatedAt: new Date('2026-07-06T08:01:00.000Z'),
+    });
+
+    const service = new ExerciseLogsService(prisma);
+    await service.create('user-id', {
+      exerciseType: ExerciseType.CYCLING,
+      durationMinutes: 60,
+    });
+
+    // 7.5 MET * 70kg * 1h = 525
+    expect(exerciseLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          estimatedCaloriesBurned: 525,
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
+
+  it('leaves calories burned unset when no weight is known at all', async () => {
+    weightLogFindFirst.mockResolvedValue(null);
+    userProfileFindUnique.mockResolvedValue(null);
+    exerciseLogCreate.mockResolvedValue({
+      id: 'exercise-log-id',
+      exerciseType: ExerciseType.WALKING,
+      durationMinutes: 30,
+      steps: null,
+      distanceKm: null,
+      estimatedCaloriesBurned: null,
+      loggedAt: new Date('2026-07-06T08:00:00.000Z'),
+      source: ExerciseLogSource.MANUAL,
+      note: null,
+      createdAt: new Date('2026-07-06T08:01:00.000Z'),
+      updatedAt: new Date('2026-07-06T08:01:00.000Z'),
+    });
+
+    const service = new ExerciseLogsService(prisma);
+    await service.create('user-id', {
+      exerciseType: ExerciseType.WALKING,
+      durationMinutes: 30,
+    });
+
+    expect(exerciseLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          estimatedCaloriesBurned: undefined,
+        }) as Record<string, unknown>,
+      }),
+    );
   });
 
   it('lists current user exercise logs with filters and default descending order', async () => {

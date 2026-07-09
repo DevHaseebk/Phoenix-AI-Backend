@@ -18,7 +18,10 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed:rag": "ts-node -T prisma/seed-rag.ts"
+    "seed:rag": "ts-node -T prisma/seed-rag.ts",
+    "db:migrate:safe": "prisma migrate dev --create-only",
+    "check:migrations": "node scripts/check-migration-safety.js",
+    "prepare": "husky"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
@@ -50,6 +53,7 @@
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.0.0",
+    "husky": "^9.1.7",
     "jest": "^30.0.0",
     "prettier": "^3.4.2",
     "prisma": "^6.19.3",

@@ -156,6 +156,7 @@ model User {
   aiMessages      AiMessage[]
   aiMealEstimates AiMealEstimate[]
   aiMemories      AiMemory[]
+  notifications   Notification[]
   refreshTokens   RefreshToken[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
@@ -434,6 +435,13 @@ model RagDocument {
   @@map("rag_documents")
 }
 
+// SAFE MIGRATIONS: this model has a manual ivfflat vector index
+// (rag_chunks_embedding_idx) that Prisma cannot see because `embedding` is
+// an Unsupported("vector") column. Plain `prisma migrate dev` will treat that
+// index as drift and propose dropping it. Always run
+// `npm run db:migrate:safe` (--create-only), hand-inspect the generated SQL,
+// and remove any DROP INDEX / unrelated-model statements before applying.
+// Full rule: docs/12_Migration_Safety_Notes.md
 model RagChunk {
   id         String                 @id @default(uuid())
   documentId String
@@ -464,6 +472,9 @@ enum AiMemoryStatus {
   ARCHIVED
 }
 
+// SAFE MIGRATIONS: this model has a manual ivfflat vector index
+// (ai_memories_embedding_idx) invisible to Prisma's diffing for the same
+// reason as RagChunk above. See that comment and docs/12_Migration_Safety_Notes.md.
 model AiMemory {
   id            String                 @id @default(uuid())
   userId        String
@@ -479,4 +490,31 @@ model AiMemory {
 
   @@index([userId, category])
   @@map("ai_memories")
+}
+
+enum NotificationType {
+  WEIGHT_UPDATE_DUE
+  MEAL_LOGGING_GAP
+  WATER_TARGET_CLOSE
+  COMEBACK_WELCOME
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  DISMISSED
+}
+
+model Notification {
+  id        String             @id @default(uuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  message   String
+  status    NotificationStatus @default(UNREAD)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([userId, status, createdAt])
+  @@map("notifications")
 }

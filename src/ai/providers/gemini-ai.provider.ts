@@ -3,15 +3,17 @@ import { GoogleGenAI } from '@google/genai';
 import {
   AiEmbeddingRequest,
   AiProvider,
+  AiProviderCoachReplyResponse,
   AiProviderMealEstimateResponse,
   AiProviderMemoryExtractionResponse,
   AiProviderRequest,
-  AiProviderTextResponse,
   MealEstimateStructuredOutput,
   MemoryExtractionStructuredOutput,
 } from '../ai-provider.interface';
+import { chatReplyResponseSchema } from '../schemas/chat-reply.schema';
 import { mealEstimateResponseSchema } from '../schemas/meal-estimate.schema';
 import { memoryExtractionResponseSchema } from '../schemas/memory-extraction.schema';
+import { normalizeChatReply } from '../utils/chat-reply.util';
 
 /** Keeps the per-turn extraction call cheap: a short JSON verdict, nothing more. */
 const memoryExtractionMaxOutputTokens = 200;
@@ -35,12 +37,16 @@ export class GeminiAiProvider implements AiProvider {
 
   async generateCoachReply(
     request: AiProviderRequest,
-  ): Promise<AiProviderTextResponse> {
+  ): Promise<AiProviderCoachReplyResponse> {
     const startedAt = Date.now();
     const rawResponse: unknown = await this.withTimeout(
       this.client.models.generateContent({
         model: request.model,
         contents: `${request.systemPrompt}\n\nUser:\n${request.userPrompt}`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: chatReplyResponseSchema,
+        },
       }),
       request.timeoutMs,
     );
@@ -51,8 +57,11 @@ export class GeminiAiProvider implements AiProvider {
       throw new ServiceUnavailableException('AI response was empty');
     }
 
+    const normalized = normalizeChatReply(this.parseChatReply(content));
+
     return {
-      content,
+      content: normalized.reply,
+      supportModeTriggered: normalized.supportModeTriggered,
       model: request.model,
       latencyMs: Date.now() - startedAt,
       tokenInput: response.usageMetadata?.promptTokenCount,
@@ -148,6 +157,16 @@ export class GeminiAiProvider implements AiProvider {
     // Truncated gemini-embedding output is not unit-normalized; normalize so
     // stored vectors behave consistently under cosine similarity.
     return embeddings.map(normalizeVector);
+  }
+
+  private parseChatReply(content: string): unknown {
+    try {
+      return JSON.parse(content);
+    } catch {
+      // normalizeChatReply() handles null/malformed input with a safe fallback
+      // reply - the primary chat path should degrade gracefully, not hard-fail.
+      return null;
+    }
   }
 
   private parseJson(content: string): MealEstimateStructuredOutput {

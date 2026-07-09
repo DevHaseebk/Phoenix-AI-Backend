@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateExerciseLogDto } from './dto/create-exercise-log.dto';
 import { ListExerciseLogsQueryDto } from './dto/list-exercise-logs-query.dto';
+import { estimateExerciseCaloriesBurned } from './utils/exercise-calorie-estimate.util';
 
 export interface ExerciseLogResponse {
   id: string;
@@ -33,6 +34,10 @@ export class ExerciseLogsService {
   ): Promise<ExerciseLogResponse> {
     await this.ensureActiveUser(userId);
 
+    const estimatedCaloriesBurned =
+      createExerciseLogDto.estimatedCaloriesBurned ??
+      (await this.estimateCaloriesBurned(userId, createExerciseLogDto));
+
     const exerciseLog = await this.prisma.exerciseLog.create({
       data: {
         userId,
@@ -40,7 +45,7 @@ export class ExerciseLogsService {
         durationMinutes: createExerciseLogDto.durationMinutes,
         steps: createExerciseLogDto.steps,
         distanceKm: createExerciseLogDto.distanceKm,
-        estimatedCaloriesBurned: createExerciseLogDto.estimatedCaloriesBurned,
+        estimatedCaloriesBurned,
         loggedAt: createExerciseLogDto.loggedAt
           ? new Date(createExerciseLogDto.loggedAt)
           : new Date(),
@@ -74,6 +79,40 @@ export class ExerciseLogsService {
     });
 
     return exerciseLogs.map(toExerciseLogResponse);
+  }
+
+  // Falls back to auto-calculating calories burned (MET formula) when the
+  // user doesn't provide their own estimate, using their most recent logged
+  // weight or, if they haven't logged one yet, their onboarding profile weight.
+  private async estimateCaloriesBurned(
+    userId: string,
+    createExerciseLogDto: CreateExerciseLogDto,
+  ): Promise<number | undefined> {
+    const [latestWeightLog, profile] = await Promise.all([
+      this.prisma.weightLog.findFirst({
+        where: { userId },
+        orderBy: { loggedAt: 'desc' },
+        select: { weightKg: true },
+      }),
+      this.prisma.userProfile.findUnique({
+        where: { userId },
+        select: { currentWeightKg: true },
+      }),
+    ]);
+
+    const weightKg = Number(
+      latestWeightLog?.weightKg ?? profile?.currentWeightKg,
+    );
+
+    if (!Number.isFinite(weightKg) || weightKg <= 0) {
+      return undefined;
+    }
+
+    return estimateExerciseCaloriesBurned({
+      exerciseType: createExerciseLogDto.exerciseType,
+      durationMinutes: createExerciseLogDto.durationMinutes,
+      weightKg,
+    });
   }
 
   private async ensureActiveUser(userId: string): Promise<void> {

@@ -67,6 +67,11 @@ export interface AiProviderMealEstimateResponse extends AiProviderTextResponse {
   structured: MealEstimateStructuredOutput;
 }
 
+export interface AiProviderCoachReplyResponse extends AiProviderTextResponse {
+  /** Same-pass Support Mode classification (D-068) - no extra API call. */
+  supportModeTriggered: boolean;
+}
+
 export interface MemoryExtractionStructuredOutput {
   shouldSave: boolean;
   category: string | null;
@@ -82,7 +87,7 @@ export interface AiProviderMemoryExtractionResponse extends AiProviderTextRespon
 export interface AiProvider {
   generateCoachReply(
     request: AiProviderRequest,
-  ): Promise<AiProviderTextResponse>;
+  ): Promise<AiProviderCoachReplyResponse>;
 
   generateMealEstimate(
     request: AiProviderRequest,

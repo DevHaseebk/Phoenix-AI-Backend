@@ -23,6 +23,7 @@ import { AiProvider } from './ai-provider.interface';
 import { AiService } from './ai.service';
 import { MemoryService } from './memory/memory.service';
 import { RagService } from './rag/rag.service';
+import { UserStateService } from './user-state/user-state.service';
 
 describe('AiService', () => {
   const userFindUnique = jest.fn();
@@ -82,6 +83,10 @@ describe('AiService', () => {
     retrieveRelevantMemories,
     extractAndSaveMemory,
   } as unknown as MemoryService;
+  const determineForUser = jest.fn();
+  const userStateService = {
+    determineForUser,
+  } as unknown as UserStateService;
 
   function createService(): AiService {
     return new AiService(
@@ -91,15 +96,33 @@ describe('AiService', () => {
       dashboardService,
       ragService,
       memoryService,
+      userStateService,
     );
   }
 
   function extractContextJson(userPrompt: string): Record<string, unknown> {
     const contextText = userPrompt
-      .split(/\n\n(?:User message|Meal request):/)[0]
+      .split('\n\n')[0]
       .replace('User context (authoritative app data):\n', '');
 
     return JSON.parse(contextText) as Record<string, unknown>;
+  }
+
+  function extractUserStateBlock(userPrompt: string): Record<string, unknown> {
+    const stateSection = userPrompt
+      .split('\n\n')
+      .find((section) => section.startsWith('User state'));
+
+    if (!stateSection) {
+      throw new Error('No "User state" block found in prompt');
+    }
+
+    return JSON.parse(
+      stateSection.replace(
+        'User state (server-computed, do not ask the user about it):\n',
+        '',
+      ),
+    ) as Record<string, unknown>;
   }
 
   function getSentUserPrompt(mockFn: jest.Mock): string {
@@ -130,9 +153,14 @@ describe('AiService', () => {
     retrieveRelevantChunks.mockResolvedValue([]);
     retrieveRelevantMemories.mockResolvedValue([]);
     extractAndSaveMemory.mockResolvedValue(undefined);
+    determineForUser.mockResolvedValue({
+      state: 'ACTIVE_USER',
+      reason: 'Recent logging activity, on track.',
+    });
     messageFindMany.mockResolvedValue([]);
     generateCoachReply.mockResolvedValue({
       content: 'Coach reply',
+      supportModeTriggered: false,
       model: 'gemini-2.5-flash',
       latencyMs: 10,
     });
@@ -577,6 +605,109 @@ describe('AiService', () => {
     expect(extractAndSaveMemory).toHaveBeenCalledWith(
       'user-id',
       expect.stringContaining('ASSISTANT: Coach reply'),
+    );
+  });
+
+  it('includes a clearly labeled "User state" block built from real data, reusing the already-computed BMR/weight', async () => {
+    userFindUnique.mockResolvedValue({
+      id: 'user-id',
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      fullName: 'Haseeb',
+      profile: {
+        gender: Gender.MALE,
+        dateOfBirth: new Date('1998-01-01'),
+        heightCm: new Prisma.Decimal('188'),
+        currentWeightKg: new Prisma.Decimal('88'),
+        targetWeightKg: new Prisma.Decimal('60'),
+        goalType: GoalType.LOSE_WEIGHT,
+        goalPace: GoalPace.BALANCED,
+        activityLevel: ActivityLevel.SEDENTARY,
+        calorieTarget: new Prisma.Decimal('1800'),
+        proteinTargetGrams: new Prisma.Decimal('96'),
+      },
+      onboarding: { status: 'COMPLETED' },
+      weightLogs: [],
+      mealLogs: [],
+    });
+    determineForUser.mockResolvedValue({
+      state: 'COMEBACK',
+      reason: 'Returned today after a 16-day gap with no logging.',
+    });
+
+    const service = createService();
+    await service.chat('user-id', { message: 'hi' });
+
+    expect(determineForUser).toHaveBeenCalledWith(
+      'user-id',
+      expect.objectContaining({
+        hasMedicalRiskFlag: false,
+        bmrKcal: expect.any(Number) as number,
+        currentWeightKg: 88,
+        targetWeightKg: 60,
+      }),
+    );
+
+    const userPrompt = getSentUserPrompt(generateCoachReply);
+    expect(userPrompt).toContain('User state (server-computed');
+    const stateBlock = extractUserStateBlock(userPrompt);
+    expect(stateBlock.state).toBe('COMEBACK');
+    expect(stateBlock.reason).toMatch(/16-day gap/);
+  });
+
+  it('passes the blocked safety flag through to state classification as the medical-risk override', async () => {
+    // This branch is unreachable in practice today, since a blocked message
+    // short-circuits chat() before reaching this point - verified for when
+    // that control flow changes, or determineForUser() is reused elsewhere.
+    const service = createService();
+    await service.chat('user-id', { message: 'hello' });
+
+    expect(determineForUser).toHaveBeenCalledWith(
+      'user-id',
+      expect.objectContaining({ hasMedicalRiskFlag: false }),
+    );
+  });
+
+  it('stores supportModeTriggered on the saved message and logs when true, without changing the response shape', async () => {
+    generateCoachReply.mockResolvedValue({
+      content: "I'm here for you. Let's take it one step at a time.",
+      supportModeTriggered: true,
+      model: 'gemini-2.5-flash',
+      latencyMs: 10,
+    });
+
+    const service = createService();
+    const response = await service.chat('user-id', {
+      message: 'I want to give up, nothing is working',
+    });
+
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          structured: { supportModeTriggered: true },
+        }) as object,
+      }),
+    );
+    // No supportModeTriggered field leaks into the frontend-facing response.
+    expect(response.message).toEqual({
+      id: 'message-id',
+      role: 'ASSISTANT',
+      content: 'Assistant reply',
+      createdAt: expect.any(Date) as Date,
+    });
+    expect(Object.keys(response.message)).not.toContain('supportModeTriggered');
+  });
+
+  it('stores supportModeTriggered: false for a normal turn', async () => {
+    const service = createService();
+    await service.chat('user-id', { message: 'what should I eat for lunch?' });
+
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          structured: { supportModeTriggered: false },
+        }) as object,
+      }),
     );
   });
 

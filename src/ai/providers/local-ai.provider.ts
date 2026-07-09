@@ -1,19 +1,20 @@
 import { MealType } from '@prisma/client';
 import {
   AiProvider,
+  AiProviderCoachReplyResponse,
   AiProviderMealEstimateResponse,
   AiProviderRequest,
-  AiProviderTextResponse,
   MealEstimateStructuredOutput,
 } from '../ai-provider.interface';
 
 export class LocalAiProvider implements AiProvider {
   generateCoachReply(
     request: AiProviderRequest,
-  ): Promise<AiProviderTextResponse> {
+  ): Promise<AiProviderCoachReplyResponse> {
     return Promise.resolve({
       content:
         '[Local AI fallback] Gemini is not configured for this environment. Log one meal, drink water, and keep the next step small.',
+      supportModeTriggered: false,
       model: request.model,
       latencyMs: 0,
     });

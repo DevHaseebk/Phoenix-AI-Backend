@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -34,6 +35,7 @@ import { detectSafetyFlags } from './utils/ai-safety.util';
 import { normalizeMealEstimate } from './utils/nutrition-sanity.util';
 import { formatMemoryBlock, MemoryService } from './memory/memory.service';
 import { formatKnowledgeBlock, RagService } from './rag/rag.service';
+import { UserStateService } from './user-state/user-state.service';
 import {
   calculateAge,
   calculateBmr,
@@ -121,8 +123,17 @@ type MealLogWithItems = Prisma.MealLogGetPayload<{
   select: typeof mealLogSafeSelect;
 }>;
 
+interface UserContextResult {
+  context: string;
+  bmrKcal: number | null;
+  currentWeightKg: number | null;
+  targetWeightKg: number | null;
+}
+
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -130,6 +141,7 @@ export class AiService {
     private readonly dashboardService: DashboardService,
     private readonly ragService: RagService,
     private readonly memoryService: MemoryService,
+    private readonly userStateService: UserStateService,
   ) {}
 
   async chat(userId: string, dto: ChatDto) {
@@ -167,7 +179,7 @@ export class AiService {
       };
     }
 
-    const [context, knowledgeChunks, memories, recentHistory] =
+    const [userContext, knowledgeChunks, memories, recentHistory] =
       await Promise.all([
         this.buildUserContext(userId),
         this.ragService.retrieveRelevantChunks(dto.message, chatKnowledgeTopK),
@@ -178,8 +190,17 @@ export class AiService {
         ),
         this.getRecentConversationHistory(conversation.id, userMessage.id),
       ]);
+    // Deterministic, non-AI classification - reuses the BMR/weight numbers
+    // already computed in buildUserContext() rather than recomputing them.
+    const userState = await this.userStateService.determineForUser(userId, {
+      hasMedicalRiskFlag: safetyFlags.blocked,
+      bmrKcal: userContext.bmrKcal,
+      currentWeightKg: userContext.currentWeightKg,
+      targetWeightKg: userContext.targetWeightKg,
+    });
     const promptSections = [
-      `User context (authoritative app data):\n${context}`,
+      `User context (authoritative app data):\n${userContext.context}`,
+      `User state (server-computed, do not ask the user about it):\n${JSON.stringify(userState)}`,
     ];
 
     if (knowledgeChunks.length > 0) {
@@ -207,10 +228,20 @@ export class AiService {
       userPrompt: promptSections.join('\n\n'),
       ...this.getProviderConfig(),
     });
+
+    if (providerResponse.supportModeTriggered) {
+      this.logger.log(
+        `Support Mode triggered for user ${userId} in conversation ${conversation.id}.`,
+      );
+    }
+
     const assistant = await this.saveAssistantMessage({
       userId,
       conversationId: conversation.id,
       content: providerResponse.content,
+      structured: {
+        supportModeTriggered: providerResponse.supportModeTriggered,
+      },
       model: providerResponse.model,
       tokenInput: providerResponse.tokenInput,
       tokenOutput: providerResponse.tokenOutput,
@@ -276,7 +307,7 @@ export class AiService {
       };
     }
 
-    const [context, knowledgeChunks] = await Promise.all([
+    const [userContext, knowledgeChunks] = await Promise.all([
       this.buildUserContext(userId),
       this.ragService.retrieveRelevantChunks(
         dto.message,
@@ -289,7 +320,7 @@ export class AiService {
         : '';
     const providerResponse = await this.aiProvider.generateMealEstimate({
       systemPrompt: mealEstimatePrompt,
-      userPrompt: `User context (authoritative app data):\n${context}${knowledgeSection}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
+      userPrompt: `User context (authoritative app data):\n${userContext.context}${knowledgeSection}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
       ...this.getProviderConfig(),
     });
     const normalized = normalizeMealEstimate(
@@ -640,7 +671,7 @@ export class AiService {
     }
   }
 
-  private async buildUserContext(userId: string): Promise<string> {
+  private async buildUserContext(userId: string): Promise<UserContextResult> {
     const [user, today] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -713,7 +744,7 @@ export class AiService {
         ? Math.round(calculateTdee(rawBmr, profile.activityLevel))
         : null;
 
-    return JSON.stringify({
+    const context = JSON.stringify({
       fullName: user?.fullName,
       onboardingStatus: user?.onboarding?.status,
       profile: profile
@@ -764,6 +795,13 @@ export class AiService {
         loggedAt: log.loggedAt,
       })),
     });
+
+    return {
+      context,
+      bmrKcal: rawBmr === null ? null : Math.round(rawBmr),
+      currentWeightKg,
+      targetWeightKg: toNullableNumber(profile?.targetWeightKg),
+    };
   }
 
   private getProviderConfig(): { model: string; timeoutMs: number } {

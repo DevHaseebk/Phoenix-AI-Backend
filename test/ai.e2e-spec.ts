@@ -35,9 +35,16 @@ describe('AI (e2e)', () => {
   const estimateUpdate = jest.fn();
   const mealLogCreate = jest.fn();
   const mealLogFindMany = jest.fn();
+  const mealLogCount = jest.fn();
   const weightLogFindFirst = jest.fn();
+  const weightLogFindMany = jest.fn();
+  const weightLogCount = jest.fn();
   const waterLogFindMany = jest.fn();
+  const waterLogCount = jest.fn();
   const exerciseLogFindMany = jest.fn();
+  const exerciseLogCount = jest.fn();
+  const onboardingFindUnique = jest.fn();
+  const profileFindUnique = jest.fn();
   const transaction = jest.fn();
   const generateCoachReply = jest.fn();
   const generateMealEstimate = jest.fn();
@@ -45,6 +52,8 @@ describe('AI (e2e)', () => {
     $transaction: transaction,
     readinessCheck: jest.fn().mockResolvedValue(true),
     user: { findUnique: userFindUnique },
+    userOnboarding: { findUnique: onboardingFindUnique },
+    userProfile: { findUnique: profileFindUnique },
     aiConversation: {
       create: conversationCreate,
       findFirst: conversationFindFirst,
@@ -57,10 +66,18 @@ describe('AI (e2e)', () => {
       findFirst: estimateFindFirst,
       update: estimateUpdate,
     },
-    mealLog: { create: mealLogCreate, findMany: mealLogFindMany },
-    weightLog: { findFirst: weightLogFindFirst },
-    waterLog: { findMany: waterLogFindMany },
-    exerciseLog: { findMany: exerciseLogFindMany },
+    mealLog: {
+      create: mealLogCreate,
+      findMany: mealLogFindMany,
+      count: mealLogCount,
+    },
+    weightLog: {
+      findFirst: weightLogFindFirst,
+      findMany: weightLogFindMany,
+      count: weightLogCount,
+    },
+    waterLog: { findMany: waterLogFindMany, count: waterLogCount },
+    exerciseLog: { findMany: exerciseLogFindMany, count: exerciseLogCount },
   };
   const estimateId = '11111111-1111-4111-8111-111111111111';
   const provider = {
@@ -72,10 +89,17 @@ describe('AI (e2e)', () => {
     jest.clearAllMocks();
     mockActiveUser();
     mealLogFindMany.mockResolvedValue([]);
+    mealLogCount.mockResolvedValue(0);
     messageFindMany.mockResolvedValue([]);
     weightLogFindFirst.mockResolvedValue(null);
+    weightLogFindMany.mockResolvedValue([]);
+    weightLogCount.mockResolvedValue(0);
     waterLogFindMany.mockResolvedValue([]);
+    waterLogCount.mockResolvedValue(0);
     exerciseLogFindMany.mockResolvedValue([]);
+    exerciseLogCount.mockResolvedValue(0);
+    onboardingFindUnique.mockResolvedValue(null);
+    profileFindUnique.mockResolvedValue(null);
     conversationCreate.mockResolvedValue({
       id: 'conversation-id',
       type: 'COACHING',
@@ -93,6 +117,7 @@ describe('AI (e2e)', () => {
     );
     generateCoachReply.mockResolvedValue({
       content: 'Add protein to your next meal and keep it simple.',
+      supportModeTriggered: false,
       model: 'gemini-2.5-flash',
       latencyMs: 25,
     });
