@@ -62,7 +62,7 @@ export function normalizeMealEstimate(
   };
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+export function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object'
     ? (value as Record<string, unknown>)
     : {};
@@ -163,13 +163,13 @@ function calculateTotals(
   };
 }
 
-function normalizeText(value: unknown, fallback: string): string {
+export function normalizeText(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
     : fallback;
 }
 
-function normalizeStringArray(value: unknown): string[] {
+export function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value
         .filter((item): item is string => typeof item === 'string')

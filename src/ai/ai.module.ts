@@ -6,6 +6,13 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AI_PROVIDER } from './ai-provider.interface';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
+import { FoodItemsService } from './food/food-items.service';
+import { FoodMatchingService } from './food/food-matching.service';
+import { MealItemResolverService } from './food/meal-item-resolver.service';
+import { UnknownFoodQueueService } from './food/unknown-food-queue.service';
+import { UnknownFoodsController } from './food/unknown-foods.controller';
+import { MealPlanService } from './meal-plan/meal-plan.service';
+import { MealPlansController } from './meal-plan/meal-plans.controller';
 import { MemoriesController } from './memory/memories.controller';
 import { MemoryService } from './memory/memory.service';
 import { NotificationsController } from './nudges/notifications.controller';
@@ -17,13 +24,24 @@ import { UserStateService } from './user-state/user-state.service';
 
 @Module({
   imports: [AuthModule, PrismaModule, DashboardModule],
-  controllers: [AiController, MemoriesController, NotificationsController],
+  controllers: [
+    AiController,
+    MemoriesController,
+    NotificationsController,
+    UnknownFoodsController,
+    MealPlansController,
+  ],
   providers: [
     AiService,
     RagService,
     MemoryService,
     UserStateService,
     NudgeService,
+    FoodMatchingService,
+    FoodItemsService,
+    UnknownFoodQueueService,
+    MealItemResolverService,
+    MealPlanService,
     {
       provide: AI_PROVIDER,
       inject: [ConfigService],

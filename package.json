@@ -18,8 +18,13 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:golden": "ts-node -T scripts/run-golden-tests.ts",
     "seed:rag": "ts-node -T prisma/seed-rag.ts",
+    "seed:food-db": "ts-node -T prisma/seed-food-db.ts",
+    "seed:usda": "ts-node -T prisma/usda-import.ts",
+    "fix:usda-energy": "ts-node -T prisma/usda-fix-energy-units.ts",
     "db:migrate:safe": "prisma migrate dev --create-only",
+    "db:migrate:resolve-drift": "node prisma/resolve-migration-drift.js",
     "check:migrations": "node scripts/check-migration-safety.js",
     "prepare": "husky"
   },

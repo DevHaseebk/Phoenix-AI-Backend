@@ -29,6 +29,7 @@ const optionalEnvKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'CORS_ORIGINS',
+  'USDA_API_KEY',
 ] as const;
 
 type RequiredEnvKey = (typeof requiredEnvKeys)[number];

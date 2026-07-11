@@ -30,9 +30,8 @@ import { ListConversationsQueryDto } from './dto/list-conversations-query.dto';
 import { MealConfirmDto, MealConfirmItemDto } from './dto/meal-confirm.dto';
 import { MealEstimateDto } from './dto/meal-estimate.dto';
 import { dailyFitSystemPrompt } from './prompts/dailyfit-system.prompt';
-import { mealEstimatePrompt } from './prompts/meal-estimate.prompt';
 import { detectSafetyFlags } from './utils/ai-safety.util';
-import { normalizeMealEstimate } from './utils/nutrition-sanity.util';
+import { MealItemResolverService } from './food/meal-item-resolver.service';
 import { formatMemoryBlock, MemoryService } from './memory/memory.service';
 import { formatKnowledgeBlock, RagService } from './rag/rag.service';
 import { UserStateService } from './user-state/user-state.service';
@@ -49,7 +48,6 @@ const chatHistoryMessageLimit = 10;
 /** Per-message truncation cap so one long message cannot blow up the prompt. */
 const chatHistoryMessageMaxChars = 500;
 const chatKnowledgeTopK = 4;
-const mealEstimateKnowledgeTopK = 3;
 const chatMemoryTopK = 4;
 
 export interface MealLogItemResponse {
@@ -142,6 +140,7 @@ export class AiService {
     private readonly ragService: RagService,
     private readonly memoryService: MemoryService,
     private readonly userStateService: UserStateService,
+    private readonly mealItemResolverService: MealItemResolverService,
   ) {}
 
   async chat(userId: string, dto: ChatDto) {
@@ -307,35 +306,33 @@ export class AiService {
       };
     }
 
-    const [userContext, knowledgeChunks] = await Promise.all([
-      this.buildUserContext(userId),
-      this.ragService.retrieveRelevantChunks(
-        dto.message,
-        mealEstimateKnowledgeTopK,
-      ),
-    ]);
-    const knowledgeSection =
-      knowledgeChunks.length > 0
-        ? `\n\nFood knowledge (general reference material retrieved for this meal; not user data):\n${formatKnowledgeBlock(knowledgeChunks)}`
-        : '';
-    const providerResponse = await this.aiProvider.generateMealEstimate({
-      systemPrompt: mealEstimatePrompt,
-      userPrompt: `User context (authoritative app data):\n${userContext.context}${knowledgeSection}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
-      ...this.getProviderConfig(),
-    });
-    const normalized = normalizeMealEstimate(
-      providerResponse.structured,
-      dto.mealType,
+    // Food Database first, now via a per-item segmentation pipeline
+    // (docs/16_Claude_Code_Handover.md multi-item fix): an exact whole-
+    // message DB match still skips the AI provider entirely; anything else
+    // is segmented into distinct foods, matched individually against the
+    // Food Database with each food's own stated quantity, and only the
+    // still-unmatched foods go to a single batched AI-estimate call. See
+    // food/meal-item-resolver.service.ts for the full pipeline.
+    const userContext = await this.buildUserContext(userId);
+    const resolution = await this.mealItemResolverService.resolveMeal(
+      dto,
+      userContext.context,
     );
+    const normalized = resolution.normalized;
+    const providerModel = resolution.providerModel;
+    const providerTokenInput = resolution.providerTokenInput;
+    const providerTokenOutput = resolution.providerTokenOutput;
+    const providerLatencyMs = resolution.providerLatencyMs;
+
     const assistantMessage = await this.saveAssistantMessage({
       userId,
       conversationId: conversation.id,
       content: normalized.structured.reply,
       structured: normalized.structured,
-      model: providerResponse.model,
-      tokenInput: providerResponse.tokenInput,
-      tokenOutput: providerResponse.tokenOutput,
-      latencyMs: providerResponse.latencyMs,
+      model: providerModel,
+      tokenInput: providerTokenInput,
+      tokenOutput: providerTokenOutput,
+      latencyMs: providerLatencyMs,
       safetyFlags,
     });
     const estimate = await this.prisma.aiMealEstimate.create({
@@ -818,14 +815,6 @@ export class AiService {
       select: { id: true },
     });
   }
-}
-
-function buildMealEstimatePrompt(dto: MealEstimateDto): string {
-  return JSON.stringify({
-    message: dto.message,
-    mealType: dto.mealType ?? null,
-    loggedAt: dto.loggedAt ?? null,
-  });
 }
 
 function toNullableNumber(

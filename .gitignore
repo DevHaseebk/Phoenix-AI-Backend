@@ -17,6 +17,9 @@ npm-debug.log*
 /coverage
 /.nyc_output
 
+# Golden test run output (docs/15_AI_Golden_Test_Set.md) - generated per run, not source
+/golden-test-results
+
 # IDE
 .idea
 .vscode

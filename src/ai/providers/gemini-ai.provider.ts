@@ -5,13 +5,16 @@ import {
   AiProvider,
   AiProviderCoachReplyResponse,
   AiProviderMealEstimateResponse,
+  AiProviderMealSegmentationResponse,
   AiProviderMemoryExtractionResponse,
   AiProviderRequest,
   MealEstimateStructuredOutput,
+  MealSegmentationStructuredOutput,
   MemoryExtractionStructuredOutput,
 } from '../ai-provider.interface';
 import { chatReplyResponseSchema } from '../schemas/chat-reply.schema';
 import { mealEstimateResponseSchema } from '../schemas/meal-estimate.schema';
+import { mealSegmentationResponseSchema } from '../schemas/meal-segmentation.schema';
 import { memoryExtractionResponseSchema } from '../schemas/memory-extraction.schema';
 import { normalizeChatReply } from '../utils/chat-reply.util';
 
@@ -101,6 +104,38 @@ export class GeminiAiProvider implements AiProvider {
     };
   }
 
+  async segmentMealItems(
+    request: AiProviderRequest,
+  ): Promise<AiProviderMealSegmentationResponse> {
+    const startedAt = Date.now();
+    const rawResponse: unknown = await this.withTimeout(
+      this.client.models.generateContent({
+        model: request.model,
+        contents: `${request.systemPrompt}\n\nMeal text:\n${request.userPrompt}`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: mealSegmentationResponseSchema,
+        },
+      }),
+      request.timeoutMs,
+    );
+    const response = toGeminiResponse(rawResponse);
+    const content = response.text?.trim();
+
+    if (!content) {
+      throw new ServiceUnavailableException('AI response was empty');
+    }
+
+    return {
+      content,
+      structured: this.parseSegmentation(content),
+      model: request.model,
+      latencyMs: Date.now() - startedAt,
+      tokenInput: response.usageMetadata?.promptTokenCount,
+      tokenOutput: response.usageMetadata?.responseTokenCount,
+    };
+  }
+
   async extractMemory(
     request: AiProviderRequest,
   ): Promise<AiProviderMemoryExtractionResponse> {
@@ -172,6 +207,16 @@ export class GeminiAiProvider implements AiProvider {
   private parseJson(content: string): MealEstimateStructuredOutput {
     try {
       return JSON.parse(content) as MealEstimateStructuredOutput;
+    } catch {
+      throw new ServiceUnavailableException(
+        'AI returned invalid structured data',
+      );
+    }
+  }
+
+  private parseSegmentation(content: string): MealSegmentationStructuredOutput {
+    try {
+      return JSON.parse(content) as MealSegmentationStructuredOutput;
     } catch {
       throw new ServiceUnavailableException(
         'AI returned invalid structured data',

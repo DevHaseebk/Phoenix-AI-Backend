@@ -21,6 +21,7 @@ import { DashboardService } from '../dashboard/dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiProvider } from './ai-provider.interface';
 import { AiService } from './ai.service';
+import { MealItemResolverService } from './food/meal-item-resolver.service';
 import { MemoryService } from './memory/memory.service';
 import { RagService } from './rag/rag.service';
 import { UserStateService } from './user-state/user-state.service';
@@ -87,6 +88,10 @@ describe('AiService', () => {
   const userStateService = {
     determineForUser,
   } as unknown as UserStateService;
+  const resolveMeal = jest.fn();
+  const mealItemResolverService = {
+    resolveMeal,
+  } as unknown as MealItemResolverService;
 
   function createService(): AiService {
     return new AiService(
@@ -97,6 +102,7 @@ describe('AiService', () => {
       ragService,
       memoryService,
       userStateService,
+      mealItemResolverService,
     );
   }
 
@@ -153,6 +159,30 @@ describe('AiService', () => {
     retrieveRelevantChunks.mockResolvedValue([]);
     retrieveRelevantMemories.mockResolvedValue([]);
     extractAndSaveMemory.mockResolvedValue(undefined);
+    resolveMeal.mockResolvedValue({
+      normalized: {
+        status: AiMealEstimateStatus.DRAFT,
+        structured: {
+          intent: 'MEAL_ESTIMATE',
+          summary: 'Estimate',
+          confidenceLevel: ConfidenceLevel.MEDIUM,
+          confidenceScore: 0.6,
+          mealType: null,
+          items: [],
+          totals: {
+            calories: 0,
+            proteinGrams: 0,
+            carbsGrams: 0,
+            fatGrams: 0,
+            fiberGrams: null,
+          },
+          clarificationQuestions: [],
+          assumptions: [],
+          warnings: [],
+          reply: 'Review before saving.',
+        },
+      },
+    });
     determineForUser.mockResolvedValue({
       state: 'ACTIVE_USER',
       reason: 'Recent logging activity, on track.',
@@ -432,41 +462,43 @@ describe('AiService', () => {
     expect(today.waterConsumedMl).toBe(500);
   });
 
-  it('includes the user context in meal estimate prompts', async () => {
-    generateMealEstimate.mockResolvedValue({
-      content: '{}',
-      structured: {
-        intent: 'MEAL_ESTIMATE',
-        summary: 'Estimate',
-        confidenceLevel: ConfidenceLevel.MEDIUM,
-        confidenceScore: 0.6,
-        mealType: MealType.LUNCH,
-        items: [
-          {
-            name: 'Chicken Biryani',
-            quantityText: 'medium plate',
+  it('delegates meal estimation to MealItemResolverService with the built user context', async () => {
+    resolveMeal.mockResolvedValue({
+      normalized: {
+        status: AiMealEstimateStatus.DRAFT,
+        structured: {
+          intent: 'MEAL_ESTIMATE',
+          summary: 'Estimate',
+          confidenceLevel: ConfidenceLevel.MEDIUM,
+          confidenceScore: 0.6,
+          mealType: MealType.LUNCH,
+          items: [
+            {
+              name: 'Chicken Biryani',
+              quantityText: 'medium plate',
+              calories: 750,
+              proteinGrams: 35,
+              carbsGrams: 85,
+              fatGrams: 28,
+              fiberGrams: 4,
+              assumptions: [],
+            },
+          ],
+          totals: {
             calories: 750,
             proteinGrams: 35,
             carbsGrams: 85,
             fatGrams: 28,
             fiberGrams: 4,
-            assumptions: [],
           },
-        ],
-        totals: {
-          calories: 750,
-          proteinGrams: 35,
-          carbsGrams: 85,
-          fatGrams: 28,
-          fiberGrams: 4,
+          clarificationQuestions: [],
+          assumptions: [],
+          warnings: [],
+          reply: 'Review before saving.',
         },
-        clarificationQuestions: [],
-        assumptions: [],
-        warnings: [],
-        reply: 'Review before saving.',
       },
-      model: 'gemini-2.5-flash',
-      latencyMs: 20,
+      providerModel: 'gemini-2.5-flash',
+      providerLatencyMs: 20,
     });
     (prisma.aiMealEstimate.create as unknown as jest.Mock).mockResolvedValue({
       id: 'estimate-id',
@@ -474,13 +506,21 @@ describe('AiService', () => {
     });
 
     const service = createService();
-    await service.estimateMeal('user-id', { message: 'chicken biryani' });
+    const response = await service.estimateMeal('user-id', {
+      message: 'chicken biryani',
+    });
 
-    const userPrompt = getSentUserPrompt(generateMealEstimate);
-
-    expect(userPrompt).toContain('User context (authoritative app data):');
-    expect(userPrompt).toContain('Meal request:');
-    expect(extractContextJson(userPrompt).today).toBeDefined();
+    expect(resolveMeal).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'chicken biryani' }) as object,
+      expect.any(String) as string,
+    );
+    const userContextArg = (resolveMeal.mock.calls[0] as [unknown, string])[1];
+    expect(
+      extractContextJson(
+        `User context (authoritative app data):\n${userContextArg}`,
+      ).today,
+    ).toBeDefined();
+    expect(response.estimate?.calories).toBe(750);
   });
 
   it('sends a bounded, truncated conversation-history window with chat', async () => {
