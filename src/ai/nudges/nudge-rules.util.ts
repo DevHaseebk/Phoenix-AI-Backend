@@ -6,6 +6,19 @@ export type NudgeType =
   | 'WATER_TARGET_CLOSE'
   | 'COMEBACK_WELCOME';
 
+/**
+ * The NotificationType enum also has BADGE_UNLOCKED (ai/rewards) - not a
+ * proactive nudge, so it must never enter nudge fatigue/daily-cap counting.
+ * Use this list (not Object.values(NotificationType)) anywhere nudge.service.ts
+ * queries/iterates notification types.
+ */
+export const nudgeNotificationTypes: NudgeType[] = [
+  'WEIGHT_UPDATE_DUE',
+  'MEAL_LOGGING_GAP',
+  'WATER_TARGET_CLOSE',
+  'COMEBACK_WELCOME',
+];
+
 export type NudgeNotificationStatus = 'UNREAD' | 'READ' | 'DISMISSED';
 
 // All thresholds below are MVP judgment calls (no locked numeric spec exists

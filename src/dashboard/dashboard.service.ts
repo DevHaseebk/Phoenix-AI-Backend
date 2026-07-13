@@ -4,6 +4,14 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { MealType, Prisma, UserStatus } from '@prisma/client';
+import {
+  calculateCalorieDeficitKcal,
+  projectFourWeekWeightChangeKg,
+} from '../common/utils/calorie-balance.util';
+import {
+  calculateBmr,
+  calculateTdee,
+} from '../common/utils/health-metrics.util';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   getLocalDateForTimezone,
@@ -13,8 +21,14 @@ import {
 import { DashboardSummaryRange } from './dto/dashboard-summary-query.dto';
 
 const fallbackTimezone = 'Asia/Karachi';
-const waterTargetMl = 3000;
+// Exported for reuse by the Rewards engine's Hydration Hero badges, so the
+// "hit water target" definition never drifts from the dashboard's own target.
+export const waterTargetMl = 3000;
 const stepsTarget = 8000;
+/** The weekly-average deficit needs at least this many meal-logged days in
+ * the last 7 to be meaningful - unlogged days would otherwise read as huge
+ * fake deficits (nothing consumed) and wreck the projection. */
+const minLoggedDaysForProjection = 3;
 
 export interface DashboardTodayResponse {
   date: string;
@@ -54,6 +68,20 @@ export interface DashboardTodayResponse {
     exercise: {
       durationMinutes: number;
       estimatedCaloriesBurned: number;
+    };
+  };
+  /** Deficit (positive) = TDEE + exercise burned - consumed; see
+   * common/utils/calorie-balance.util.ts, the shared single source of the
+   * formula. Weekly figures are rough, meal-logged-days-only estimates. */
+  calorieBalance: {
+    tdeeKcal: number | null;
+    caloriesConsumed: number;
+    exerciseCaloriesBurned: number;
+    deficitKcal: number | null;
+    weekly: {
+      loggedDayCount: number;
+      averageDailyDeficitKcal: number | null;
+      projectedFourWeekKg: number | null;
     };
   };
   timeline: MealTimelineItem[];
@@ -124,6 +152,7 @@ export class DashboardService {
     const profile = user.profile;
     const timezone = profile?.timezone ?? fallbackTimezone;
     const todayRange = getTodayRangeForTimezone(timezone, now);
+    const weekRange = getLocalDateRangeForTimezone(timezone, 7, now);
 
     const [
       latestWeightLog,
@@ -131,6 +160,8 @@ export class DashboardService {
       waterLogs,
       exerciseLogs,
       mealLogs,
+      weekMealLogs,
+      weekExerciseLogs,
     ] = await Promise.all([
       this.prisma.weightLog.findFirst({
         where: {
@@ -185,6 +216,20 @@ export class DashboardService {
           },
         },
       }),
+      this.prisma.mealLog.findMany({
+        where: {
+          userId,
+          loggedAt: { gte: weekRange.startUtc, lte: weekRange.endUtc },
+        },
+        select: { loggedAt: true, totalCalories: true },
+      }),
+      this.prisma.exerciseLog.findMany({
+        where: {
+          userId,
+          loggedAt: { gte: weekRange.startUtc, lte: weekRange.endUtc },
+        },
+        select: { loggedAt: true, estimatedCaloriesBurned: true },
+      }),
     ]);
 
     const currentWeightKg = firstNumber(
@@ -226,6 +271,36 @@ export class DashboardService {
       0,
     );
     const timeline = mealLogs.map(toMealTimelineItem);
+    // TDEE via the same shared Mifflin-St Jeor util ai.service.ts uses -
+    // never a second formula.
+    const canComputeTdee =
+      Boolean(profile?.gender) &&
+      Boolean(profile?.dateOfBirth) &&
+      profile?.heightCm !== null &&
+      profile?.heightCm !== undefined &&
+      currentWeightKg !== null &&
+      Boolean(profile?.activityLevel);
+    const tdeeKcal = canComputeTdee
+      ? Math.round(
+          calculateTdee(
+            calculateBmr({
+              gender: profile.gender!,
+              dateOfBirth: profile.dateOfBirth!,
+              heightCm: Number(profile.heightCm),
+              weightKg: currentWeightKg,
+            }),
+            profile.activityLevel!,
+          ),
+        )
+      : null;
+    const calorieBalance = buildCalorieBalance({
+      tdeeKcal,
+      caloriesConsumed,
+      exerciseCaloriesBurned: exerciseEstimatedCaloriesBurned,
+      timezone,
+      weekMealLogs,
+      weekExerciseLogs,
+    });
 
     return {
       date: todayRange.date,
@@ -274,6 +349,7 @@ export class DashboardService {
           estimatedCaloriesBurned: exerciseEstimatedCaloriesBurned,
         },
       },
+      calorieBalance,
       timeline,
       quickActions: [
         'LOG_MEAL',
@@ -404,6 +480,13 @@ export class DashboardService {
             proteinTargetGrams: true,
             currentWeightKg: true,
             targetWeightKg: true,
+            // For TDEE (Mifflin-St Jeor via the shared health-metrics util,
+            // the same one ai.service.ts uses) powering the calorie-balance
+            // card.
+            gender: true,
+            dateOfBirth: true,
+            heightCm: true,
+            activityLevel: true,
           },
         },
         onboarding: {
@@ -574,6 +657,93 @@ function calculateConsistencyPercentage(input: {
   return clamp(
     Math.round((earnedPoints / (input.dayCount * maxDailyPoints)) * 100),
   );
+}
+
+/**
+ * Today's deficit/surplus plus a rough weekly-average projection. Only days
+ * with at least one meal log count toward the average (an unlogged day is
+ * missing data, not a genuine full-TDEE deficit); fewer than
+ * `minLoggedDaysForProjection` such days, or a missing TDEE, disables the
+ * weekly figures rather than showing a misleading number.
+ */
+function buildCalorieBalance(input: {
+  tdeeKcal: number | null;
+  caloriesConsumed: number;
+  exerciseCaloriesBurned: number;
+  timezone: string;
+  weekMealLogs: Array<{
+    loggedAt: Date;
+    totalCalories: Prisma.Decimal | number;
+  }>;
+  weekExerciseLogs: Array<{
+    loggedAt: Date;
+    estimatedCaloriesBurned: number | null;
+  }>;
+}): DashboardTodayResponse['calorieBalance'] {
+  const deficitKcal = calculateCalorieDeficitKcal({
+    tdeeKcal: input.tdeeKcal,
+    caloriesConsumed: input.caloriesConsumed,
+    exerciseCaloriesBurned: input.exerciseCaloriesBurned,
+  });
+
+  const consumedByDate = new Map<string, number>();
+
+  for (const mealLog of input.weekMealLogs) {
+    const date = getLocalDateForTimezone(mealLog.loggedAt, input.timezone);
+    consumedByDate.set(
+      date,
+      (consumedByDate.get(date) ?? 0) + Number(mealLog.totalCalories),
+    );
+  }
+
+  const burnedByDate = new Map<string, number>();
+
+  for (const exerciseLog of input.weekExerciseLogs) {
+    const date = getLocalDateForTimezone(exerciseLog.loggedAt, input.timezone);
+    burnedByDate.set(
+      date,
+      (burnedByDate.get(date) ?? 0) +
+        (exerciseLog.estimatedCaloriesBurned ?? 0),
+    );
+  }
+
+  const loggedDayCount = consumedByDate.size;
+
+  if (input.tdeeKcal === null || loggedDayCount < minLoggedDaysForProjection) {
+    return {
+      tdeeKcal: input.tdeeKcal,
+      caloriesConsumed: input.caloriesConsumed,
+      exerciseCaloriesBurned: input.exerciseCaloriesBurned,
+      deficitKcal,
+      weekly: {
+        loggedDayCount,
+        averageDailyDeficitKcal: null,
+        projectedFourWeekKg: null,
+      },
+    };
+  }
+
+  let deficitTotal = 0;
+
+  for (const [date, consumed] of consumedByDate) {
+    deficitTotal += input.tdeeKcal + (burnedByDate.get(date) ?? 0) - consumed;
+  }
+
+  const averageDailyDeficitKcal = Math.round(deficitTotal / loggedDayCount);
+
+  return {
+    tdeeKcal: input.tdeeKcal,
+    caloriesConsumed: input.caloriesConsumed,
+    exerciseCaloriesBurned: input.exerciseCaloriesBurned,
+    deficitKcal,
+    weekly: {
+      loggedDayCount,
+      averageDailyDeficitKcal,
+      projectedFourWeekKg: projectFourWeekWeightChangeKg(
+        averageDailyDeficitKcal,
+      ),
+    },
+  };
 }
 
 function buildLocalDateSet(

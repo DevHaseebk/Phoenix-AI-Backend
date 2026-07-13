@@ -1,4 +1,4 @@
-import { ConfidenceLevel, MealType } from '@prisma/client';
+import { ConfidenceLevel, ExerciseType, MealType } from '@prisma/client';
 
 export const AI_PROVIDER = Symbol('AI_PROVIDER');
 
@@ -41,6 +41,27 @@ export interface MealEstimateItemOutput {
   fatGrams: number;
   fiberGrams: number | null;
   assumptions: string[];
+  /** Local calendar date (YYYY-MM-DD) this item belongs to, resolved from
+   * relative phrasing ("kal", "yesterday") by segmentation. null/absent =
+   * unspecified, treated as today at confirm time. */
+  resolvedDate?: string | null;
+  /** Meal of the day this item was stated to belong to ("in breakfast..."),
+   * used to group items into per-meal logs at confirm time. */
+  mealSlot?: MealType | null;
+}
+
+/** One exercise activity extracted from a day-activity message. Calories are
+ * computed deterministically (MET formula, logs/utils/exercise-calorie-
+ * estimate.util.ts) - never AI-estimated. */
+export interface ExerciseEstimateItemOutput {
+  name: string;
+  exerciseType: ExerciseType;
+  durationMinutes: number;
+  distanceKm: number | null;
+  steps: number | null;
+  estimatedCaloriesBurned: number | null;
+  resolvedDate?: string | null;
+  assumptions: string[];
 }
 
 export interface MealEstimateStructuredOutput {
@@ -67,19 +88,33 @@ export interface AiProviderMealEstimateResponse extends AiProviderTextResponse {
   structured: MealEstimateStructuredOutput;
 }
 
-/** One distinct food item extracted from a raw meal description, with the
- * user's own stated quantity/unit preserved (not a default). */
+/** One distinct day-activity item (a food OR an exercise) extracted from a
+ * raw message, with the user's own stated quantity/duration preserved (not a
+ * default) and any relative date reference ("kal", "yesterday", "this
+ * morning") resolved to an absolute local calendar date. */
 export interface MealItemSegment {
+  /** FOOD (default when the model omits it) or EXERCISE. */
+  itemType: 'FOOD' | 'EXERCISE';
   text: string;
+  /** Food only: user's own stated quantity, never invented. */
   quantity: string | null;
   unit: string | null;
+  /** Food only: the meal of the day the user assigned this item to. */
+  mealSlot: MealType | null;
+  /** Exercise only. */
+  durationMinutes: number | null;
+  distanceKm: number | null;
+  steps: number | null;
+  /** Absolute local date (YYYY-MM-DD) for THIS item - a single message can
+   * span multiple days. null = unspecified (safe default: today). */
+  date: string | null;
 }
 
 export interface MealSegmentationStructuredOutput {
-  /** MEAL_ITEMS when the message describes food to segment; NOT_FOOD/
-   * CLARIFICATION_NEEDED reuse the same passthrough handling as meal
-   * estimation so this single call also covers those cases without a
-   * second AI call. */
+  /** MEAL_ITEMS when the message describes loggable food and/or exercise
+   * activity; NOT_FOOD/CLARIFICATION_NEEDED reuse the same passthrough
+   * handling as meal estimation so this single call also covers those cases
+   * without a second AI call. */
   intent: 'MEAL_ITEMS' | 'NOT_FOOD' | 'CLARIFICATION_NEEDED';
   items: MealItemSegment[];
   clarificationQuestions: string[];
@@ -107,6 +142,18 @@ export interface AiProviderMemoryExtractionResponse extends AiProviderTextRespon
   structured: MemoryExtractionStructuredOutput;
 }
 
+export interface WeeklyReviewStructuredOutput {
+  summary: string;
+  whatWorked: string;
+  whatGotDifficult: string;
+  /** 1-3 short, concrete actions for next week. */
+  nextWeekFocus: string[];
+}
+
+export interface AiProviderWeeklyReviewResponse extends AiProviderTextResponse {
+  structured: WeeklyReviewStructuredOutput;
+}
+
 export interface AiProvider {
   generateCoachReply(
     request: AiProviderRequest,
@@ -132,13 +179,26 @@ export interface AiProvider {
   ): Promise<AiProviderMemoryExtractionResponse>;
 
   /**
-   * Optional: splits a raw meal message into its distinct food items (each
-   * with the user's own stated quantity/unit) before Food Database matching,
-   * so a multi-food message is never matched/estimated as if it were one
-   * food. Providers without this capability fall back to the single-call,
-   * whole-message generateMealEstimate() path (see ai.service.ts).
+   * Optional: unified day-activity segmentation - splits a raw message into
+   * its distinct FOOD and EXERCISE items (each with the user's own stated
+   * quantity/duration and an absolute per-item date resolved from relative
+   * phrasing like "kal"/"yesterday") before Food Database matching, so a
+   * multi-item message is never matched/estimated as if it were one food and
+   * exercise mentions are never silently dropped. Providers without this
+   * capability fall back to the single-call, whole-message
+   * generateMealEstimate() path (see meal-item-resolver.service.ts).
    */
   segmentMealItems?(
     request: AiProviderRequest,
   ): Promise<AiProviderMealSegmentationResponse>;
+
+  /**
+   * Optional: generates the Weekly Review narrative (summary/whatWorked/
+   * whatGotDifficult/nextWeekFocus) from server-computed stats. Providers
+   * without this capability cause Review Mode to persist stats-only with
+   * aiSummary: null (see review.service.ts) rather than failing generation.
+   */
+  generateWeeklyReview?(
+    request: AiProviderRequest,
+  ): Promise<AiProviderWeeklyReviewResponse>;
 }

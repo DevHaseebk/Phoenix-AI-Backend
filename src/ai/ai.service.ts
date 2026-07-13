@@ -13,6 +13,8 @@ import {
   AiMealEstimateStatus,
   AiMessageRole,
   ConfidenceLevel,
+  ExerciseLogSource,
+  ExerciseType,
   MealLogSource,
   MealLogStatus,
   MealType,
@@ -22,6 +24,7 @@ import {
 import {
   AI_PROVIDER,
   AiSafetyFlags,
+  ExerciseEstimateItemOutput,
   MealEstimateItemOutput,
 } from './ai-provider.interface';
 import type { AiProvider } from './ai-provider.interface';
@@ -31,15 +34,24 @@ import { MealConfirmDto, MealConfirmItemDto } from './dto/meal-confirm.dto';
 import { MealEstimateDto } from './dto/meal-estimate.dto';
 import { dailyFitSystemPrompt } from './prompts/dailyfit-system.prompt';
 import { detectSafetyFlags } from './utils/ai-safety.util';
-import { MealItemResolverService } from './food/meal-item-resolver.service';
+import { containsLoggableContent } from './utils/loggable-content.util';
+import {
+  MealItemResolverService,
+  MealResolutionResult,
+} from './food/meal-item-resolver.service';
 import { formatMemoryBlock, MemoryService } from './memory/memory.service';
 import { formatKnowledgeBlock, RagService } from './rag/rag.service';
 import { UserStateService } from './user-state/user-state.service';
+import { calculateCalorieDeficitKcal } from '../common/utils/calorie-balance.util';
 import {
   calculateAge,
   calculateBmr,
   calculateTdee,
 } from '../common/utils/health-metrics.util';
+import {
+  getTodayRangeForTimezone,
+  getUtcInstantForLocalDate,
+} from '../dashboard/dashboard-timezone';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -126,6 +138,22 @@ interface UserContextResult {
   bmrKcal: number | null;
   currentWeightKg: number | null;
   targetWeightKg: number | null;
+  /** User's local timezone + today's local date (from the dashboard's
+   * canonical timezone helper) - reused by day-activity segmentation to
+   * resolve relative date phrases ("kal", "yesterday") per item. */
+  timezone: string;
+  todayDate: string;
+}
+
+/** Confirmed exercise row summary returned by confirmMeal(). */
+export interface ConfirmedExerciseLogResponse {
+  id: string;
+  exerciseType: ExerciseType;
+  durationMinutes: number;
+  steps: number | null;
+  distanceKm: number | null;
+  estimatedCaloriesBurned: number | null;
+  loggedAt: Date;
 }
 
 @Injectable()
@@ -178,17 +206,40 @@ export class AiService {
       };
     }
 
-    const [userContext, knowledgeChunks, memories, recentHistory] =
-      await Promise.all([
-        this.buildUserContext(userId),
-        this.ragService.retrieveRelevantChunks(dto.message, chatKnowledgeTopK),
-        this.memoryService.retrieveRelevantMemories(
-          userId,
-          dto.message,
-          chatMemoryTopK,
-        ),
-        this.getRecentConversationHistory(conversation.id, userMessage.id),
-      ]);
+    const userContext = await this.buildUserContext(userId);
+
+    // Unified logging interception: when a chat message plausibly describes
+    // food eaten or exercise done (deterministic keyword pre-filter, zero AI
+    // calls - CLAUDE.md §4), run the same day-activity estimate pipeline as
+    // estimateMeal() and return the shared review-before-log estimate card
+    // instead of a plain reply. chat() never silently creates log rows: the
+    // user still confirms via /ai/meal-confirm, exactly like Meal mode. If
+    // segmentation finds nothing loggable, this returns null and the normal
+    // coaching reply below proceeds (cost: the one segmentation call).
+    if (containsLoggableContent(dto.message)) {
+      const intercepted = await this.tryBuildChatEstimate({
+        userId,
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        message: dto.message,
+        userContext,
+        safetyFlags,
+      });
+
+      if (intercepted) {
+        return intercepted;
+      }
+    }
+
+    const [knowledgeChunks, memories, recentHistory] = await Promise.all([
+      this.ragService.retrieveRelevantChunks(dto.message, chatKnowledgeTopK),
+      this.memoryService.retrieveRelevantMemories(
+        userId,
+        dto.message,
+        chatMemoryTopK,
+      ),
+      this.getRecentConversationHistory(conversation.id, userMessage.id),
+    ]);
     // Deterministic, non-AI classification - reuses the BMR/weight numbers
     // already computed in buildUserContext() rather than recomputing them.
     const userState = await this.userStateService.determineForUser(userId, {
@@ -306,41 +357,145 @@ export class AiService {
       };
     }
 
-    // Food Database first, now via a per-item segmentation pipeline
-    // (docs/16_Claude_Code_Handover.md multi-item fix): an exact whole-
-    // message DB match still skips the AI provider entirely; anything else
-    // is segmented into distinct foods, matched individually against the
-    // Food Database with each food's own stated quantity, and only the
-    // still-unmatched foods go to a single batched AI-estimate call. See
-    // food/meal-item-resolver.service.ts for the full pipeline.
+    // Food Database first, now via the unified day-activity segmentation
+    // pipeline (docs/16_Claude_Code_Handover.md): an exact whole-message DB
+    // match still skips the AI provider entirely; anything else is segmented
+    // into distinct FOOD and EXERCISE items with per-item resolved dates,
+    // each food matched individually against the Food Database with its own
+    // stated quantity, only still-unmatched foods going to a single batched
+    // AI-estimate call, and exercise calories computed deterministically.
+    // See food/meal-item-resolver.service.ts for the full pipeline.
     const userContext = await this.buildUserContext(userId);
-    const resolution = await this.mealItemResolverService.resolveMeal(
-      dto,
-      userContext.context,
-    );
-    const normalized = resolution.normalized;
-    const providerModel = resolution.providerModel;
-    const providerTokenInput = resolution.providerTokenInput;
-    const providerTokenOutput = resolution.providerTokenOutput;
-    const providerLatencyMs = resolution.providerLatencyMs;
-
-    const assistantMessage = await this.saveAssistantMessage({
+    const resolution = await this.mealItemResolverService.resolveMeal(dto, {
+      userContext: userContext.context,
+      timezone: userContext.timezone,
+      todayLocalDate: userContext.todayDate,
+      currentWeightKg: userContext.currentWeightKg,
+    });
+    const persisted = await this.persistEstimate({
       userId,
       conversationId: conversation.id,
-      content: normalized.structured.reply,
-      structured: normalized.structured,
-      model: providerModel,
-      tokenInput: providerTokenInput,
-      tokenOutput: providerTokenOutput,
-      latencyMs: providerLatencyMs,
+      originalText: dto.message,
+      resolution,
       safetyFlags,
     });
+
+    await this.touchConversation(conversation.id);
+
+    return {
+      conversationId: conversation.id,
+      estimateId: persisted.estimateId,
+      status: persisted.status,
+      assistantMessage: persisted.assistantMessage.content,
+      estimate: persisted.estimatePayload,
+      safetyFlags,
+    };
+  }
+
+  /**
+   * chat()'s logging interception: runs the shared day-activity resolver and,
+   * when it produced reviewable items, persists the estimate + assistant
+   * message and returns a chat-shaped response carrying the same estimate
+   * payload estimateMeal() returns (one shared estimate+confirm mechanism,
+   * not a second divergent one). Returns null when segmentation found
+   * nothing loggable so the caller falls through to a normal coaching reply.
+   */
+  private async tryBuildChatEstimate(input: {
+    userId: string;
+    conversationId: string;
+    userMessageId: string;
+    message: string;
+    userContext: UserContextResult;
+    safetyFlags: AiSafetyFlags;
+  }) {
+    const resolution = await this.mealItemResolverService.resolveMeal(
+      { message: input.message },
+      {
+        userContext: input.userContext.context,
+        timezone: input.userContext.timezone,
+        todayLocalDate: input.userContext.todayDate,
+        currentWeightKg: input.userContext.currentWeightKg,
+      },
+    );
+    const structured = resolution.normalized.structured;
+    const hasLoggableItems =
+      structured.intent === 'MEAL_ESTIMATE' &&
+      (structured.items.length > 0 || resolution.exerciseItems.length > 0);
+
+    if (!hasLoggableItems) {
+      return null;
+    }
+
+    const persisted = await this.persistEstimate({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      originalText: input.message,
+      resolution,
+      safetyFlags: input.safetyFlags,
+    });
+
+    await this.touchConversation(input.conversationId);
+
+    return {
+      conversationId: input.conversationId,
+      userMessageId: input.userMessageId,
+      message: persisted.assistantMessage,
+      suggestions: ['Log meal estimate', 'Review today', 'Plan next meal'],
+      safetyFlags: input.safetyFlags,
+      mealEstimate: {
+        estimateId: persisted.estimateId,
+        status: persisted.status,
+        estimate: persisted.estimatePayload,
+      },
+    };
+  }
+
+  /**
+   * Shared by estimateMeal() and chat()'s interception: saves the assistant
+   * message and the confirmable AiMealEstimate row. Food and exercise items
+   * are stored together in the estimate's `items` Json with an `itemType`
+   * discriminator (FOOD rows predating this feature have no discriminator
+   * and are treated as FOOD), so no schema migration is needed.
+   */
+  private async persistEstimate(input: {
+    userId: string;
+    conversationId: string;
+    originalText: string;
+    resolution: MealResolutionResult;
+    safetyFlags: AiSafetyFlags;
+  }) {
+    const normalized = input.resolution.normalized;
+    const exerciseItems = input.resolution.exerciseItems;
+    const assistantMessage = await this.saveAssistantMessage({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      content: normalized.structured.reply,
+      structured: {
+        ...normalized.structured,
+        exerciseItems,
+      },
+      model: input.resolution.providerModel,
+      tokenInput: input.resolution.providerTokenInput,
+      tokenOutput: input.resolution.providerTokenOutput,
+      latencyMs: input.resolution.providerLatencyMs,
+      safetyFlags: input.safetyFlags,
+    });
+    const storedItems = [
+      ...normalized.structured.items.map((item) => ({
+        itemType: 'FOOD' as const,
+        ...item,
+      })),
+      ...exerciseItems.map((item) => ({
+        itemType: 'EXERCISE' as const,
+        ...item,
+      })),
+    ];
     const estimate = await this.prisma.aiMealEstimate.create({
       data: {
-        userId,
-        conversationId: conversation.id,
+        userId: input.userId,
+        conversationId: input.conversationId,
         messageId: assistantMessage.id,
-        originalText: dto.message,
+        originalText: input.originalText,
         mealType: normalized.structured.mealType,
         status: normalized.status,
         confidenceLevel: normalized.structured.confidenceLevel,
@@ -350,7 +505,7 @@ export class AiService {
         carbsGrams: normalized.structured.totals.carbsGrams,
         fatGrams: normalized.structured.totals.fatGrams,
         fiberGrams: normalized.structured.totals.fiberGrams,
-        items: normalized.structured.items as unknown as Prisma.InputJsonValue,
+        items: storedItems,
         clarificationQuestions: normalized.structured.clarificationQuestions,
         assumptions: normalized.structured.assumptions,
         warnings: normalized.structured.warnings,
@@ -361,15 +516,12 @@ export class AiService {
       },
     });
 
-    await this.touchConversation(conversation.id);
-
     return {
-      conversationId: conversation.id,
+      assistantMessage,
       estimateId: estimate.id,
       status: estimate.status,
-      assistantMessage: assistantMessage.content,
-      estimate: {
-        originalText: dto.message,
+      estimatePayload: {
+        originalText: input.originalText,
         mealType: normalized.structured.mealType,
         confidenceLevel: normalized.structured.confidenceLevel,
         confidenceScore: normalized.structured.confidenceScore,
@@ -379,91 +531,208 @@ export class AiService {
         fatGrams: normalized.structured.totals.fatGrams,
         fiberGrams: normalized.structured.totals.fiberGrams,
         items: normalized.structured.items,
+        exerciseItems,
         clarificationQuestions: normalized.structured.clarificationQuestions,
         assumptions: normalized.structured.assumptions,
         warnings: normalized.structured.warnings,
       },
-      safetyFlags,
     };
   }
 
   async confirmMeal(userId: string, dto: MealConfirmDto) {
     await this.ensureActiveUser(userId);
 
-    const mealLog = await this.prisma.$transaction(async (transaction) => {
-      const estimate = await transaction.aiMealEstimate.findFirst({
-        where: { id: dto.estimateId, userId },
-      });
+    const confirmed = await this.prisma.$transaction(
+      async (transaction) => {
+        const estimate = await transaction.aiMealEstimate.findFirst({
+          where: { id: dto.estimateId, userId },
+        });
 
-      if (!estimate) {
-        throw new NotFoundException('Meal estimate not found');
-      }
+        if (!estimate) {
+          throw new NotFoundException('Meal estimate not found');
+        }
 
-      if (estimate.status === AiMealEstimateStatus.CONFIRMED) {
-        throw new BadRequestException('Meal estimate already confirmed');
-      }
+        if (estimate.status === AiMealEstimateStatus.CONFIRMED) {
+          throw new BadRequestException('Meal estimate already confirmed');
+        }
 
-      const items = dto.corrections?.items
-        ? dto.corrections.items.map(toEstimateItem)
-        : extractEstimateItems(estimate.items);
+        const stored = splitStoredEstimateItems(estimate.items);
+        // Corrections replace the FOOD side of the estimate (existing
+        // behavior); exercise items are confirmed as estimated.
+        const foodItems = dto.corrections?.items
+          ? dto.corrections.items.map(toEstimateItem)
+          : stored.foodItems;
 
-      if (items.length === 0) {
-        throw new BadRequestException('Meal estimate is not confirmable');
-      }
+        if (foodItems.length === 0 && stored.exerciseItems.length === 0) {
+          throw new BadRequestException('Meal estimate is not confirmable');
+        }
 
-      const totals = calculateTotals(items);
-      const mealType =
-        dto.corrections?.mealType ?? estimate.mealType ?? MealType.CUSTOM;
-      const status =
-        estimate.status === AiMealEstimateStatus.NEEDS_CLARIFICATION ||
-        estimate.confidenceLevel === ConfidenceLevel.LOW
-          ? MealLogStatus.NEEDS_REVIEW
-          : MealLogStatus.ESTIMATED;
-      const createdMealLog = await transaction.mealLog.create({
-        data: {
-          userId,
-          mealType,
-          loggedAt: dto.corrections?.loggedAt
-            ? new Date(dto.corrections.loggedAt)
-            : new Date(),
-          source: MealLogSource.AI_CHAT,
-          status,
-          confidenceLevel: estimate.confidenceLevel,
-          description: estimate.originalText.slice(0, 200),
-          note: 'Created from DailyFit Coach AI meal estimate.',
-          totalCalories: totals.calories,
-          totalProteinGrams: totals.proteinGrams,
-          totalCarbsGrams: totals.carbsGrams,
-          totalFatGrams: totals.fatGrams,
-          items: {
-            create: items.map((item) => ({
-              foodName: item.name,
-              portionLabel: item.quantityText,
-              calories: item.calories,
-              proteinGrams: item.proteinGrams,
-              carbsGrams: item.carbsGrams,
-              fatGrams: item.fatGrams,
-              confidenceLevel: estimate.confidenceLevel,
-            })),
+        // Per-item resolved dates are anchored to the user's local calendar
+        // (dashboard-timezone.ts): "kal maine X khaya" must create a log dated
+        // yesterday, not today.
+        const profile = await transaction.userProfile.findUnique({
+          where: { userId },
+          select: { timezone: true },
+        });
+        const timezone = profile?.timezone ?? 'Asia/Karachi';
+        const todayDate = getTodayRangeForTimezone(timezone).date;
+        const overrideLoggedAt = dto.corrections?.loggedAt
+          ? new Date(dto.corrections.loggedAt)
+          : null;
+        const resolveLoggedAt = (resolvedDate: string | null | undefined) => {
+          if (overrideLoggedAt) {
+            return overrideLoggedAt;
+          }
+
+          // Unspecified or explicitly-today items keep the previous behavior
+          // (logged at the current instant); only back-dated items move.
+          if (!resolvedDate || resolvedDate === todayDate) {
+            return new Date();
+          }
+
+          return getUtcInstantForLocalDate(timezone, resolvedDate);
+        };
+
+        const status =
+          estimate.status === AiMealEstimateStatus.NEEDS_CLARIFICATION ||
+          estimate.confidenceLevel === ConfidenceLevel.LOW
+            ? MealLogStatus.NEEDS_REVIEW
+            : MealLogStatus.ESTIMATED;
+        const fallbackMealType =
+          dto.corrections?.mealType ?? estimate.mealType ?? MealType.CUSTOM;
+        // One MealLog per (resolved date, meal of the day) group, so a message
+        // spanning several meals/days lands as separate, correctly-dated logs.
+        // Created in parallel (not a sequential for-loop): a message describing
+        // a whole day can produce several groups plus several exercise rows,
+        // and awaiting each round-trip one at a time toward a remote DB was
+        // enough added latency to blow Prisma's 5s interactive-transaction
+        // timeout - a real bug this multi-item confirm design introduced,
+        // caught live-testing the exact reported multi-meal message.
+        const groups = groupFoodItemsForLogging(foodItems, fallbackMealType);
+        const createdMealLogs: MealLogWithItems[] = await Promise.all(
+          groups.map((group) => {
+            const totals = calculateTotals(group.items);
+
+            return transaction.mealLog.create({
+              data: {
+                userId,
+                mealType: group.mealType,
+                loggedAt: resolveLoggedAt(group.resolvedDate),
+                source: MealLogSource.AI_CHAT,
+                status,
+                confidenceLevel: estimate.confidenceLevel,
+                description: estimate.originalText.slice(0, 200),
+                note: 'Created from DailyFit Coach AI meal estimate.',
+                totalCalories: totals.calories,
+                totalProteinGrams: totals.proteinGrams,
+                totalCarbsGrams: totals.carbsGrams,
+                totalFatGrams: totals.fatGrams,
+                items: {
+                  create: group.items.map((item) => ({
+                    foodName: item.name,
+                    portionLabel: item.quantityText,
+                    calories: item.calories,
+                    proteinGrams: item.proteinGrams,
+                    carbsGrams: item.carbsGrams,
+                    fatGrams: item.fatGrams,
+                    confidenceLevel: estimate.confidenceLevel,
+                  })),
+                },
+              },
+              select: mealLogSafeSelect,
+            });
+          }),
+        );
+
+        // Same estimate-then-confirm pattern as meals: rows are only written
+        // here, after the user pressed Confirm - never directly from chat.
+        // Source stays MANUAL because ExerciseLogSource has no AI value and
+        // adding one would need a schema migration (deliberately avoided); the
+        // note marks the real origin.
+        const createdExerciseLogsRaw = await Promise.all(
+          stored.exerciseItems.map((item) =>
+            transaction.exerciseLog.create({
+              data: {
+                userId,
+                exerciseType: item.exerciseType,
+                durationMinutes: item.durationMinutes,
+                steps: item.steps,
+                distanceKm: item.distanceKm,
+                estimatedCaloriesBurned: item.estimatedCaloriesBurned,
+                loggedAt: resolveLoggedAt(item.resolvedDate),
+                source: ExerciseLogSource.MANUAL,
+                note: 'Created from DailyFit Coach AI estimate.',
+              },
+              select: {
+                id: true,
+                exerciseType: true,
+                durationMinutes: true,
+                steps: true,
+                distanceKm: true,
+                estimatedCaloriesBurned: true,
+                loggedAt: true,
+              },
+            }),
+          ),
+        );
+        const createdExerciseLogs: ConfirmedExerciseLogResponse[] =
+          createdExerciseLogsRaw.map((log) => ({
+            ...log,
+            distanceKm: log.distanceKm === null ? null : Number(log.distanceKm),
+          }));
+
+        await transaction.aiMealEstimate.update({
+          where: { id: estimate.id },
+          data: {
+            status: AiMealEstimateStatus.CONFIRMED,
+            confirmedAt: new Date(),
+            mealLogId: createdMealLogs[0]?.id ?? null,
           },
-        },
-        select: mealLogSafeSelect,
-      });
+          select: { id: true },
+        });
 
-      await transaction.aiMealEstimate.update({
-        where: { id: estimate.id },
-        data: {
-          status: AiMealEstimateStatus.CONFIRMED,
-          confirmedAt: new Date(),
-          mealLogId: createdMealLog.id,
-        },
-        select: { id: true },
-      });
+        return { createdMealLogs, createdExerciseLogs };
+      },
+      // A message describing a full day can produce several MealLog/
+      // ExerciseLog writes in this transaction; even parallelized, a remote
+      // DB's round-trip latency can approach Prisma's 5s default - a
+      // generous margin avoids a repeat of the timeout bug above without
+      // masking a genuinely stuck query (still fails loudly past 15s).
+      { timeout: 15000 },
+    );
 
-      return createdMealLog;
-    });
+    const mealLogs = confirmed.createdMealLogs.map(toMealLogResponse);
+    const caloriesBurned = confirmed.createdExerciseLogs.reduce(
+      (total, log) => total + (log.estimatedCaloriesBurned ?? 0),
+      0,
+    );
 
-    return toMealLogResponse(mealLog);
+    return {
+      mealLogs,
+      exerciseLogs: confirmed.createdExerciseLogs,
+      totals: {
+        calories: mealLogs.reduce((total, log) => total + log.totalCalories, 0),
+        proteinGrams: mealLogs.reduce(
+          (total, log) => total + log.totalProteinGrams,
+          0,
+        ),
+        caloriesBurned,
+      },
+      todayCalorieBalance: await this.getTodayCalorieBalance(userId),
+    };
+  }
+
+  /** Post-confirm deficit/surplus snapshot for the success card, reusing the
+   * dashboard's single source of truth rather than recomputing here. */
+  private async getTodayCalorieBalance(userId: string) {
+    try {
+      const today = await this.dashboardService.getToday(userId);
+
+      return today.calorieBalance;
+    } catch {
+      // The confirm itself succeeded; a balance snapshot is a nice-to-have.
+      return null;
+    }
   }
 
   async listConversations(userId: string, query: ListConversationsQueryDto) {
@@ -740,6 +1009,14 @@ export class AiService {
       rawBmr !== null && profile?.activityLevel
         ? Math.round(calculateTdee(rawBmr, profile.activityLevel))
         : null;
+    // Positive = deficit. Shared formula with the dashboard card
+    // (common/utils/calorie-balance.util.ts) - never recomputed differently.
+    const estimatedDeficitKcal = calculateCalorieDeficitKcal({
+      tdeeKcal,
+      caloriesConsumed: today.todayProgress.calories.consumed,
+      exerciseCaloriesBurned:
+        today.todayProgress.exercise.estimatedCaloriesBurned,
+    });
 
     const context = JSON.stringify({
       fullName: user?.fullName,
@@ -780,6 +1057,7 @@ export class AiService {
         exerciseMinutes: today.todayProgress.exercise.durationMinutes,
         exerciseCaloriesBurned:
           today.todayProgress.exercise.estimatedCaloriesBurned,
+        estimatedDeficitKcal,
       },
       recentWeightLogs: user?.weightLogs.map((log) => ({
         weightKg: Number(log.weightKg),
@@ -798,6 +1076,8 @@ export class AiService {
       bmrKcal: rawBmr === null ? null : Math.round(rawBmr),
       currentWeightKg,
       targetWeightKg: toNullableNumber(profile?.targetWeightKg),
+      timezone: today.timezone,
+      todayDate: today.date,
     };
   }
 
@@ -841,14 +1121,80 @@ function buildMemoryExtractionTurnText(
   return priorLines ? `${priorLines}\n${currentTurn}` : currentTurn;
 }
 
-function extractEstimateItems(
-  value: Prisma.JsonValue,
-): MealEstimateItemOutput[] {
+/**
+ * Splits an AiMealEstimate's stored `items` Json back into food and exercise
+ * items via the `itemType` discriminator. Rows persisted before exercise
+ * support have plain food objects with no discriminator - treated as FOOD,
+ * preserving old estimates' confirm behavior exactly.
+ */
+function splitStoredEstimateItems(value: Prisma.JsonValue): {
+  foodItems: MealEstimateItemOutput[];
+  exerciseItems: ExerciseEstimateItemOutput[];
+} {
   if (!Array.isArray(value)) {
-    return [];
+    return { foodItems: [], exerciseItems: [] };
   }
 
-  return value.map((item) => toEstimateItem(item)).filter(Boolean);
+  const foodItems: MealEstimateItemOutput[] = [];
+  const exerciseItems: ExerciseEstimateItemOutput[] = [];
+
+  for (const item of value) {
+    const source = item as Record<string, unknown> | null;
+
+    if (source && source.itemType === 'EXERCISE') {
+      exerciseItems.push(toStoredExerciseItem(source));
+    } else {
+      foodItems.push(toEstimateItem(item));
+    }
+  }
+
+  return { foodItems, exerciseItems };
+}
+
+const exerciseTypes = new Set<string>(Object.values(ExerciseType));
+const mealSlotTypes = new Set<string>(Object.values(MealType));
+
+function toStoredExerciseItem(
+  source: Record<string, unknown>,
+): ExerciseEstimateItemOutput {
+  const durationMinutes = Number(source.durationMinutes);
+
+  return {
+    name: (typeof source.name === 'string' ? source.name : 'Exercise').slice(
+      0,
+      150,
+    ),
+    exerciseType:
+      typeof source.exerciseType === 'string' &&
+      exerciseTypes.has(source.exerciseType)
+        ? (source.exerciseType as ExerciseType)
+        : ExerciseType.OTHER,
+    durationMinutes:
+      Number.isFinite(durationMinutes) && durationMinutes >= 1
+        ? Math.min(Math.round(durationMinutes), 1440)
+        : 30,
+    distanceKm: toStoredNullableNumber(source.distanceKm),
+    steps: toStoredNullableNumber(source.steps),
+    estimatedCaloriesBurned: toStoredNullableNumber(
+      source.estimatedCaloriesBurned,
+    ),
+    resolvedDate: toStoredResolvedDate(source.resolvedDate),
+    assumptions: [],
+  };
+}
+
+function toStoredNullableNumber(value: unknown): number | null {
+  const numeric = Number(value);
+
+  return value === null || value === undefined || !Number.isFinite(numeric)
+    ? null
+    : numeric;
+}
+
+function toStoredResolvedDate(value: unknown): string | null {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value
+    : null;
 }
 
 function toEstimateItem(item: unknown): MealEstimateItemOutput {
@@ -869,7 +1215,49 @@ function toEstimateItem(item: unknown): MealEstimateItemOutput {
         ? null
         : Number(source.fiberGrams),
     assumptions: [],
+    resolvedDate: toStoredResolvedDate(
+      (source as MealEstimateItemOutput).resolvedDate,
+    ),
+    mealSlot:
+      typeof (source as MealEstimateItemOutput).mealSlot === 'string' &&
+      mealSlotTypes.has((source as MealEstimateItemOutput).mealSlot as string)
+        ? (source as MealEstimateItemOutput).mealSlot
+        : null,
   };
+}
+
+interface FoodLogGroup {
+  resolvedDate: string | null;
+  mealType: MealType;
+  items: MealEstimateItemOutput[];
+}
+
+/**
+ * Groups confirmable food items by (resolved date, meal of the day) so a
+ * single message describing a whole day ("breakfast X, lunch Y ... kal")
+ * produces one correctly-typed MealLog per meal per day, in stable
+ * first-appearance order.
+ */
+function groupFoodItemsForLogging(
+  items: MealEstimateItemOutput[],
+  fallbackMealType: MealType,
+): FoodLogGroup[] {
+  const groups = new Map<string, FoodLogGroup>();
+
+  for (const item of items) {
+    const resolvedDate = item.resolvedDate ?? null;
+    const mealType = item.mealSlot ?? fallbackMealType;
+    const key = `${resolvedDate ?? 'today'}|${mealType}`;
+    const existing = groups.get(key);
+
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groups.set(key, { resolvedDate, mealType, items: [item] });
+    }
+  }
+
+  return [...groups.values()];
 }
 
 function calculateTotals(items: MealEstimateItemOutput[]): {

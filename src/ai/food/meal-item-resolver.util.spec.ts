@@ -1,4 +1,8 @@
-import { MealEstimateItemOutput } from '../ai-provider.interface';
+import {
+  ExerciseEstimateItemOutput,
+  MealEstimateItemOutput,
+  MealItemSegment,
+} from '../ai-provider.interface';
 import {
   buildCombinedRawEstimate,
   buildCombinedReply,
@@ -26,6 +30,22 @@ function item(
   };
 }
 
+function segment(
+  overrides: Partial<MealItemSegment> & { text: string },
+): MealItemSegment {
+  return {
+    itemType: 'FOOD',
+    quantity: null,
+    unit: null,
+    mealSlot: null,
+    durationMinutes: null,
+    distanceKm: null,
+    steps: null,
+    date: null,
+    ...overrides,
+  };
+}
+
 describe('normalizeSegmentation', () => {
   it('parses a well-formed MEAL_ITEMS response, preserving stated quantity/unit per item', () => {
     const result = normalizeSegmentation({
@@ -41,16 +61,12 @@ describe('normalizeSegmentation', () => {
 
     expect(result.intent).toBe('MEAL_ITEMS');
     expect(result.items).toHaveLength(3);
-    expect(result.items[0]).toEqual({
-      text: 'boiled eggs',
-      quantity: '2',
-      unit: 'large egg',
-    });
-    expect(result.items[2]).toEqual({
-      text: 'low fat milk',
-      quantity: '200',
-      unit: 'g',
-    });
+    expect(result.items[0]).toEqual(
+      segment({ text: 'boiled eggs', quantity: '2', unit: 'large egg' }),
+    );
+    expect(result.items[2]).toEqual(
+      segment({ text: 'low fat milk', quantity: '200', unit: 'g' }),
+    );
   });
 
   it('never invents a quantity - a segment with no stated amount stays null/null', () => {
@@ -61,11 +77,7 @@ describe('normalizeSegmentation', () => {
       reply: '',
     });
 
-    expect(result.items[0]).toEqual({
-      text: 'daal',
-      quantity: null,
-      unit: null,
-    });
+    expect(result.items[0]).toEqual(segment({ text: 'daal' }));
   });
 
   it('drops malformed entries with no text instead of producing empty segments', () => {
@@ -76,9 +88,125 @@ describe('normalizeSegmentation', () => {
       reply: '',
     });
 
-    expect(result.items).toEqual([
-      { text: 'rice', quantity: null, unit: null },
+    expect(result.items).toEqual([segment({ text: 'rice' })]);
+  });
+
+  it('defaults a missing/unknown itemType to FOOD so pre-exercise providers keep the old behavior', () => {
+    const result = normalizeSegmentation({
+      intent: 'MEAL_ITEMS',
+      items: [
+        { text: 'oats' },
+        { text: 'walk', itemType: 'EXERCISE', durationMinutes: 30 },
+        { text: 'mystery', itemType: 'SOMETHING_ELSE' },
+      ],
+      clarificationQuestions: [],
+      reply: '',
+    });
+
+    expect(result.items.map((entry) => entry.itemType)).toEqual([
+      'FOOD',
+      'EXERCISE',
+      'FOOD',
     ]);
+    expect(result.items[1].durationMinutes).toBe(30);
+  });
+
+  it('keeps exercise numbers only when plausible (duration/steps/distance ranges)', () => {
+    const result = normalizeSegmentation({
+      intent: 'MEAL_ITEMS',
+      items: [
+        {
+          text: 'walk',
+          itemType: 'EXERCISE',
+          durationMinutes: 0, // below minimum -> null
+          steps: 5000.4, // rounded to integer
+          distanceKm: 3.2,
+        },
+        {
+          text: 'mega walk',
+          itemType: 'EXERCISE',
+          durationMinutes: 5000, // above 24h -> null
+          steps: -10, // -> null
+          distanceKm: 9000, // -> null
+        },
+      ],
+      clarificationQuestions: [],
+      reply: '',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      durationMinutes: null,
+      steps: 5000,
+      distanceKm: 3.2,
+    });
+    expect(result.items[1]).toMatchObject({
+      durationMinutes: null,
+      steps: null,
+      distanceKm: null,
+    });
+  });
+
+  describe('per-item date resolution', () => {
+    const today = '2026-07-13';
+
+    function normalizeDates(dates: unknown[]): (string | null)[] {
+      const result = normalizeSegmentation(
+        {
+          intent: 'MEAL_ITEMS',
+          items: dates.map((date, index) => ({
+            text: `food ${index}`,
+            date,
+          })),
+          clarificationQuestions: [],
+          reply: '',
+        },
+        today,
+      );
+
+      return result.items.map((entry) => entry.date);
+    }
+
+    it('keeps valid dates within the last week (today, yesterday, parso)', () => {
+      expect(
+        normalizeDates(['2026-07-13', '2026-07-12', '2026-07-11']),
+      ).toEqual(['2026-07-13', '2026-07-12', '2026-07-11']);
+    });
+
+    it('drops unspecified, malformed, and impossible dates to null (= today default)', () => {
+      expect(
+        normalizeDates([
+          null,
+          undefined,
+          'yesterday',
+          '2026-7-1',
+          '2026-02-30',
+        ]),
+      ).toEqual([null, null, null, null, null]);
+    });
+
+    it('drops future dates - a loggable item can never be tomorrow', () => {
+      expect(normalizeDates(['2026-07-14', '2027-01-01'])).toEqual([
+        null,
+        null,
+      ]);
+    });
+
+    it('drops dates older than the 7-day sanity window (bulk backfill is out of scope)', () => {
+      expect(
+        normalizeDates(['2026-07-06', '2026-07-05', '2026-06-01']),
+      ).toEqual(['2026-07-06', null, null]);
+    });
+
+    it('keeps week-old dates when no today reference is provided (format-only validation)', () => {
+      const result = normalizeSegmentation({
+        intent: 'MEAL_ITEMS',
+        items: [{ text: 'food', date: '2026-06-01' }],
+        clarificationQuestions: [],
+        reply: '',
+      });
+
+      expect(result.items[0].date).toBe('2026-06-01');
+    });
   });
 
   it('falls back to CLARIFICATION_NEEDED for a malformed/unknown intent', () => {
@@ -102,8 +230,8 @@ describe('normalizeSegmentation', () => {
 describe('buildMissingItemsPrompt', () => {
   it('numbers each food and includes its stated quantity when known', () => {
     const prompt = buildMissingItemsPrompt([
-      { text: 'oats', quantity: '100', unit: 'g' },
-      { text: 'low fat milk', quantity: null, unit: null },
+      segment({ text: 'oats', quantity: '100', unit: 'g' }),
+      segment({ text: 'low fat milk' }),
     ]);
 
     expect(prompt).toContain('1. oats (stated quantity: 100 g)');
@@ -136,8 +264,8 @@ describe('mapBatchEstimateToItems', () => {
         reply: '',
       },
       [
-        { text: 'oats', quantity: '100', unit: 'g' },
-        { text: 'low fat milk', quantity: '200', unit: 'g' },
+        segment({ text: 'oats', quantity: '100', unit: 'g' }),
+        segment({ text: 'low fat milk', quantity: '200', unit: 'g' }),
       ],
     );
 
@@ -168,8 +296,8 @@ describe('mapBatchEstimateToItems', () => {
         reply: '',
       },
       [
-        { text: 'oats', quantity: '100', unit: 'g' },
-        { text: 'low fat milk', quantity: '200', unit: 'g' },
+        segment({ text: 'oats', quantity: '100', unit: 'g' }),
+        segment({ text: 'low fat milk', quantity: '200', unit: 'g' }),
       ],
     );
 
@@ -252,6 +380,46 @@ describe('buildCombinedReply', () => {
     const reply = buildCombinedReply(items, totals, 0, 2);
     expect(reply).toContain("aren't in our food database yet");
     expect(reply).not.toContain('food database.');
+  });
+
+  const exerciseItem: ExerciseEstimateItemOutput = {
+    name: 'walk',
+    exerciseType: 'WALKING',
+    durationMinutes: 30,
+    distanceKm: null,
+    steps: null,
+    estimatedCaloriesBurned: 154,
+    resolvedDate: '2026-07-12',
+    assumptions: [],
+  };
+
+  it('acknowledges exercise items and back-dated items instead of dropping them silently', () => {
+    const reply = buildCombinedReply(items, totals, 2, 0, [exerciseItem]);
+
+    expect(reply).toContain('Exercise: walk (30 min, ~154 kcal burned).');
+    expect(reply).toContain('will be logged to that date');
+  });
+
+  it('builds an exercise-only reply with no bogus "0 kcal meal" sentence', () => {
+    const reply = buildCombinedReply(
+      [],
+      { ...totals, calories: 0, proteinGrams: 0 },
+      0,
+      0,
+      [exerciseItem],
+    );
+
+    expect(reply).not.toContain('about 0 kcal');
+    expect(reply).toContain('Exercise: walk');
+  });
+
+  it('says so plainly when exercise calories could not be estimated', () => {
+    const reply = buildCombinedReply([], totals, 0, 0, [
+      { ...exerciseItem, estimatedCaloriesBurned: null, resolvedDate: null },
+    ]);
+
+    expect(reply).toContain('calories not estimated');
+    expect(reply).not.toContain('will be logged to that date');
   });
 });
 

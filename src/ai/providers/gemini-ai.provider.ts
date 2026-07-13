@@ -8,14 +8,17 @@ import {
   AiProviderMealSegmentationResponse,
   AiProviderMemoryExtractionResponse,
   AiProviderRequest,
+  AiProviderWeeklyReviewResponse,
   MealEstimateStructuredOutput,
   MealSegmentationStructuredOutput,
   MemoryExtractionStructuredOutput,
+  WeeklyReviewStructuredOutput,
 } from '../ai-provider.interface';
 import { chatReplyResponseSchema } from '../schemas/chat-reply.schema';
 import { mealEstimateResponseSchema } from '../schemas/meal-estimate.schema';
 import { mealSegmentationResponseSchema } from '../schemas/meal-segmentation.schema';
 import { memoryExtractionResponseSchema } from '../schemas/memory-extraction.schema';
+import { weeklyReviewResponseSchema } from '../schemas/weekly-review.schema';
 import { normalizeChatReply } from '../utils/chat-reply.util';
 
 /** Keeps the per-turn extraction call cheap: a short JSON verdict, nothing more. */
@@ -169,6 +172,38 @@ export class GeminiAiProvider implements AiProvider {
     };
   }
 
+  async generateWeeklyReview(
+    request: AiProviderRequest,
+  ): Promise<AiProviderWeeklyReviewResponse> {
+    const startedAt = Date.now();
+    const rawResponse: unknown = await this.withTimeout(
+      this.client.models.generateContent({
+        model: request.model,
+        contents: `${request.systemPrompt}\n\n${request.userPrompt}`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: weeklyReviewResponseSchema,
+        },
+      }),
+      request.timeoutMs,
+    );
+    const response = toGeminiResponse(rawResponse);
+    const content = response.text?.trim();
+
+    if (!content) {
+      throw new ServiceUnavailableException('AI response was empty');
+    }
+
+    return {
+      content,
+      structured: this.parseWeeklyReview(content),
+      model: request.model,
+      latencyMs: Date.now() - startedAt,
+      tokenInput: response.usageMetadata?.promptTokenCount,
+      tokenOutput: response.usageMetadata?.responseTokenCount,
+    };
+  }
+
   async generateEmbeddings(request: AiEmbeddingRequest): Promise<number[][]> {
     const rawResponse: unknown = await this.withTimeout(
       this.client.models.embedContent({
@@ -229,6 +264,16 @@ export class GeminiAiProvider implements AiProvider {
   ): MemoryExtractionStructuredOutput {
     try {
       return JSON.parse(content) as MemoryExtractionStructuredOutput;
+    } catch {
+      throw new ServiceUnavailableException(
+        'AI returned invalid structured data',
+      );
+    }
+  }
+
+  private parseWeeklyReview(content: string): WeeklyReviewStructuredOutput {
+    try {
+      return JSON.parse(content) as WeeklyReviewStructuredOutput;
     } catch {
       throw new ServiceUnavailableException(
         'AI returned invalid structured data',

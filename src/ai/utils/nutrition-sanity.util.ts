@@ -120,6 +120,15 @@ function normalizeItems(value: unknown): MealEstimateItemOutput[] {
           ? null
           : clampNumber(source.fiberGrams, 0, 100),
       assumptions: normalizeStringArray(source.assumptions),
+      // Per-item day/meal placement (already validated by
+      // normalizeSegmentation before it reaches this shape) - preserved so
+      // confirm-time date grouping survives normalization.
+      resolvedDate:
+        typeof source.resolvedDate === 'string' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(source.resolvedDate)
+          ? source.resolvedDate
+          : null,
+      mealSlot: normalizeMealType(source.mealSlot),
     };
   });
 }

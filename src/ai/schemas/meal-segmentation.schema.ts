@@ -1,7 +1,9 @@
 import { Type } from '@google/genai';
 
-// Used only by AiProvider.segmentMealItems() - splits a raw meal message
-// into distinct food items before Food Database matching. See
+// Used only by AiProvider.segmentMealItems() - unified day-activity
+// segmentation: splits a raw message into distinct FOOD and EXERCISE items
+// (with per-item absolute dates resolved from relative phrasing) before Food
+// Database matching / deterministic exercise-calorie estimation. See
 // meal-item-resolver.service.ts.
 export const mealSegmentationResponseSchema = {
   type: Type.OBJECT,
@@ -15,11 +17,34 @@ export const mealSegmentationResponseSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
+          itemType: {
+            type: Type.STRING,
+            enum: ['FOOD', 'EXERCISE'],
+          },
           text: { type: Type.STRING },
           quantity: { type: Type.STRING, nullable: true },
           unit: { type: Type.STRING, nullable: true },
+          mealSlot: {
+            type: Type.STRING,
+            enum: ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'],
+            nullable: true,
+          },
+          durationMinutes: { type: Type.NUMBER, nullable: true },
+          distanceKm: { type: Type.NUMBER, nullable: true },
+          steps: { type: Type.NUMBER, nullable: true },
+          date: { type: Type.STRING, nullable: true },
         },
-        required: ['text', 'quantity', 'unit'],
+        required: [
+          'itemType',
+          'text',
+          'quantity',
+          'unit',
+          'mealSlot',
+          'durationMinutes',
+          'distanceKm',
+          'steps',
+          'date',
+        ],
       },
     },
     clarificationQuestions: {

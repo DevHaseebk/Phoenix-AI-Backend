@@ -20,6 +20,10 @@ import { NudgeService } from './nudges/nudge.service';
 import { GeminiAiProvider } from './providers/gemini-ai.provider';
 import { LocalAiProvider } from './providers/local-ai.provider';
 import { RagService } from './rag/rag.service';
+import { ReviewService } from './review/review.service';
+import { ReviewsController } from './review/reviews.controller';
+import { RewardsController } from './rewards/rewards.controller';
+import { RewardsService } from './rewards/rewards.service';
 import { UserStateService } from './user-state/user-state.service';
 
 @Module({
@@ -30,6 +34,8 @@ import { UserStateService } from './user-state/user-state.service';
     NotificationsController,
     UnknownFoodsController,
     MealPlansController,
+    ReviewsController,
+    RewardsController,
   ],
   providers: [
     AiService,
@@ -42,6 +48,8 @@ import { UserStateService } from './user-state/user-state.service';
     UnknownFoodQueueService,
     MealItemResolverService,
     MealPlanService,
+    ReviewService,
+    RewardsService,
     {
       provide: AI_PROVIDER,
       inject: [ConfigService],

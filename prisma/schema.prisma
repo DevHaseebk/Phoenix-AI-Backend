@@ -158,6 +158,8 @@ model User {
   aiMemories      AiMemory[]
   notifications   Notification[]
   mealPlans       MealPlan[]
+  weeklyReviews   WeeklyReview[]
+  userBadges      UserBadge[]
   refreshTokens   RefreshToken[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
@@ -498,6 +500,7 @@ enum NotificationType {
   MEAL_LOGGING_GAP
   WATER_TARGET_CLOSE
   COMEBACK_WELCOME
+  BADGE_UNLOCKED
 }
 
 enum NotificationStatus {
@@ -674,4 +677,61 @@ model GroceryListItem {
 
   @@index([mealPlanId])
   @@map("grocery_list_items")
+}
+
+// Simplified from docs/09_Database_Schema.md §11.2: no DailySummary cache
+// table (that design assumes a nightly job; no cron/job infra exists in this
+// repo - see CLAUDE.md §8). All stats are computed on-demand at generation
+// time from raw logs (see ai/review/weekly-review-stats.util.ts) and only
+// the final WeeklyReview result is persisted, for history. generatedByProvider
+// is a plain string (e.g. "gemini"/"local"), not an enum - no AIProvider enum
+// exists anywhere else in this schema either.
+model WeeklyReview {
+  id                  String    @id @default(uuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekStartDate       DateTime
+  weekEndDate         DateTime
+
+  avgCalories         Decimal?
+  avgProteinGrams     Decimal?
+  avgSteps            Decimal?
+  avgWaterMl          Decimal?
+  startWeightKg       Decimal?
+  endWeightKg         Decimal?
+  weightChangeKg      Decimal?
+  consistencyRate     Decimal?
+
+  // AI narrative. aiRecommendations also carries whatWorked/whatGotDifficult/
+  // nextWeekFocus/bestHabit/weakestHabit - see review.service.ts - rather than
+  // adding a column per field, since this is inherently one AI-shaped bundle.
+  aiSummary           String?
+  aiRecommendations   Json?
+  generatedByProvider String?
+  generatedAt         DateTime?
+  viewedAt            DateTime?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([userId, weekStartDate])
+  @@index([weekStartDate, weekEndDate])
+  @@map("weekly_reviews")
+}
+
+// Rewards/Badge Engine (docs/02_Product_Bible.md §22, docs/17_Rewards_Badge_Design.md).
+// Badge definitions themselves are a static, typed config array in code
+// (backend/src/ai/rewards/badge-definitions.ts), NOT database rows - badgeKey
+// here just references that config's `key` field. This is the only new table:
+// one row per badge a user has actually unlocked.
+model UserBadge {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeKey   String
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, badgeKey])
+  @@index([userId])
+  @@map("user_badges")
 }

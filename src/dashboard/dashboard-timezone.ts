@@ -107,6 +107,77 @@ export function getLocalDateForTimezone(date: Date, timezone: string): string {
   return formatLocalDate(getZonedParts(date, timezone));
 }
 
+/**
+ * UTC instant range covering an arbitrary inclusive local-date window
+ * (start of startDate through end of endDate, in the given timezone).
+ * Same construction as getTodayRangeForTimezone's single-day range, just
+ * parameterized - used by Review Mode to resolve a Monday-Sunday week
+ * instead of a "last N days ending today" window.
+ */
+export function getUtcRangeForLocalDateRange(
+  timezone: string,
+  startDate: string,
+  endDate: string,
+): { startUtc: Date; endUtc: Date } {
+  const startParts = parseLocalDate(startDate);
+  const startUtc = zonedTimeToUtc(
+    { ...startParts, ...zeroTimeParts() },
+    timezone,
+  );
+  const endParts = parseLocalDate(endDate);
+  const nextDayUtcParts = new Date(
+    Date.UTC(endParts.year, endParts.month - 1, endParts.day + 1),
+  );
+  const nextStartUtc = zonedTimeToUtc(
+    {
+      year: nextDayUtcParts.getUTCFullYear(),
+      month: nextDayUtcParts.getUTCMonth() + 1,
+      day: nextDayUtcParts.getUTCDate(),
+      ...zeroTimeParts(),
+    },
+    timezone,
+  );
+
+  return { startUtc, endUtc: new Date(nextStartUtc.getTime() - 1) };
+}
+
+/**
+ * Pure calendar-date arithmetic on a YYYY-MM-DD string (no timezone needed -
+ * offsetting a local calendar date is timezone-independent). Used to build
+ * the "yesterday"/"day before" date context for AI day-activity segmentation
+ * and to validate the dates it resolves.
+ */
+export function addDaysToLocalDate(date: string, days: number): string {
+  const parts = parseLocalDate(date);
+  const shifted = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day + days),
+  );
+
+  return formatLocalDate({
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    ...zeroTimeParts(),
+  });
+}
+
+/**
+ * UTC instant for a fixed local time-of-day on a local calendar date -
+ * used to date back-logged entries ("kal maine X khaya") so the stored
+ * loggedAt falls inside the intended local day. Noon is the default anchor:
+ * it stays inside the same local day under any UTC offset shift.
+ */
+export function getUtcInstantForLocalDate(
+  timezone: string,
+  date: string,
+  hour = 12,
+): Date {
+  return zonedTimeToUtc(
+    { ...parseLocalDate(date), hour, minute: 0, second: 0, millisecond: 0 },
+    timezone,
+  );
+}
+
 function zonedTimeToUtc(
   localParts: LocalDateTimeParts,
   timezone: string,

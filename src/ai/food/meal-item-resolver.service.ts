@@ -2,15 +2,18 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AI_PROVIDER,
+  ExerciseEstimateItemOutput,
   MealEstimateItemOutput,
   MealItemSegment,
 } from '../ai-provider.interface';
 import type { AiProvider } from '../ai-provider.interface';
+import { addDaysToLocalDate } from '../../dashboard/dashboard-timezone';
 import { MealEstimateDto } from '../dto/meal-estimate.dto';
 import { mealEstimatePrompt } from '../prompts/meal-estimate.prompt';
 import { mealItemEstimateBatchPrompt } from '../prompts/meal-item-estimate-batch.prompt';
 import { mealSegmentationPrompt } from '../prompts/meal-segmentation.prompt';
 import { formatKnowledgeBlock, RagService } from '../rag/rag.service';
+import { buildExerciseEstimateItem } from '../utils/exercise-activity.util';
 import { buildMealEstimatePrompt } from '../utils/meal-estimate-prompt.util';
 import {
   normalizeMealEstimate,
@@ -29,9 +32,30 @@ import { UnknownFoodQueueService } from './unknown-food-queue.service';
 import { normalizeFoodText } from './utils/food-normalize.util';
 
 const mealEstimateKnowledgeTopK = 3;
+/** MET-formula exercise estimates use a representative moderate intensity,
+ * so they carry MEDIUM confidence into the combined estimate. */
+const exerciseConfidence = {
+  confidenceLevel: 'MEDIUM' as const,
+  confidenceScore: 0.7,
+};
+
+export interface MealResolutionContext {
+  /** Compact JSON user-context block from AiService.buildUserContext(). */
+  userContext: string;
+  /** User's local timezone + today's local date (dashboard-timezone.ts is
+   * the canonical source) - injected into the segmentation call so relative
+   * date phrases resolve to correct absolute dates. */
+  timezone: string;
+  todayLocalDate: string;
+  /** Latest known weight, for deterministic MET calorie estimates. */
+  currentWeightKg: number | null;
+}
 
 export interface MealResolutionResult {
   normalized: NormalizedMealEstimate;
+  /** Deterministically-estimated exercise items extracted from the same
+   * message (empty for food-only messages and legacy/fast paths). */
+  exerciseItems: ExerciseEstimateItemOutput[];
   providerModel?: string;
   providerTokenInput?: number;
   providerTokenOutput?: number;
@@ -40,11 +64,14 @@ export interface MealResolutionResult {
 
 /**
  * Owns estimateMeal()'s AI-calling pipeline (docs/16_Claude_Code_Handover.md
- * multi-item segmentation fix): segment the raw message into distinct food
- * items -> match each individually against the Food Database with its own
- * stated quantity -> batch-estimate whatever's left in one call -> combine.
- * Replaces the old behavior of matching the whole raw message as if it were
- * one food, which silently dropped every other item in a multi-food message.
+ * multi-item segmentation fix, generalized to unified day-activity
+ * segmentation): segment the raw message into distinct FOOD and EXERCISE
+ * items with per-item resolved dates -> match each food individually against
+ * the Food Database with its own stated quantity -> batch-estimate whatever
+ * food is left in one call -> compute exercise calories deterministically
+ * (MET formula, zero AI calls) -> combine. Replaces the old behavior of
+ * matching the whole raw message as if it were one food, which silently
+ * dropped every other item in a multi-item message.
  */
 @Injectable()
 export class MealItemResolverService {
@@ -60,12 +87,13 @@ export class MealItemResolverService {
 
   async resolveMeal(
     dto: MealEstimateDto,
-    userContext: string,
+    context: MealResolutionContext,
   ): Promise<MealResolutionResult> {
     // Fast path: an EXACT whole-message alias match is unambiguous (the
     // entire portion-stripped message literally equals a known alias, so
-    // there is no room for another food to be hiding in the text) - trust
-    // it directly and skip AI entirely, exactly as before this fix.
+    // there is no room for another food - or an exercise mention - to be
+    // hiding in the text) - trust it directly and skip AI entirely, exactly
+    // as before this fix.
     // CONTAINMENT matches are NOT trusted here: a short alias found as a
     // substring of a longer message is exactly how the original bug matched
     // only "low fat milk" inside "2 boiled egg 100gm oats and 200gm low fat
@@ -82,22 +110,26 @@ export class MealItemResolverService {
           wholeMessageMatch.structured,
           dto.mealType,
         ),
+        exerciseItems: [],
       };
     }
 
     if (!this.aiProvider.segmentMealItems) {
       // Providers without segmentation support (e.g. LocalAiProvider) keep
       // the previous single-call, whole-message behavior.
-      return this.legacySingleCallEstimate(dto, userContext);
+      return this.legacySingleCallEstimate(dto, context.userContext);
     }
 
     const knowledgeSection = await this.buildKnowledgeSection(dto.message);
     const segmentationResponse = await this.aiProvider.segmentMealItems({
       systemPrompt: mealSegmentationPrompt,
-      userPrompt: `User context (authoritative app data):\n${userContext}${knowledgeSection}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
+      userPrompt: `User context (authoritative app data):\n${context.userContext}${knowledgeSection}\n\n${buildDateContextBlock(context)}\n\nMeal request:\n${buildMealEstimatePrompt(dto)}`,
       ...this.getProviderConfig(),
     });
-    const segmentation = normalizeSegmentation(segmentationResponse.structured);
+    const segmentation = normalizeSegmentation(
+      segmentationResponse.structured,
+      context.todayLocalDate,
+    );
 
     if (
       segmentation.intent !== 'MEAL_ITEMS' ||
@@ -107,6 +139,7 @@ export class MealItemResolverService {
 
       return {
         normalized: normalizeMealEstimate(raw, dto.mealType),
+        exerciseItems: [],
         providerModel: segmentationResponse.model,
         providerTokenInput: segmentationResponse.tokenInput,
         providerTokenOutput: segmentationResponse.tokenOutput,
@@ -117,6 +150,7 @@ export class MealItemResolverService {
     return this.resolveSegments(
       segmentation.items,
       dto,
+      context,
       knowledgeSection,
       segmentationResponse,
     );
@@ -125,6 +159,7 @@ export class MealItemResolverService {
   private async resolveSegments(
     segments: MealItemSegment[],
     dto: MealEstimateDto,
+    context: MealResolutionContext,
     knowledgeSection: string,
     segmentationResponse: {
       model: string;
@@ -133,8 +168,19 @@ export class MealItemResolverService {
       latencyMs: number;
     },
   ): Promise<MealResolutionResult> {
+    const foodSegments = segments.filter(
+      (segment) => segment.itemType !== 'EXERCISE',
+    );
+    // Exercise items are fully deterministic from here: type inferred by
+    // keyword, calories via the existing MET util - zero extra AI calls.
+    const exerciseItems = segments
+      .filter((segment) => segment.itemType === 'EXERCISE')
+      .map((segment) =>
+        buildExerciseEstimateItem(segment, context.currentWeightKg),
+      );
+
     const matchResults = await Promise.all(
-      segments.map((segment) =>
+      foodSegments.map((segment) =>
         this.foodMatchingService.resolveMatch(segment.text, dto.mealType, {
           quantity: segment.quantity,
           unit: segment.unit,
@@ -143,7 +189,7 @@ export class MealItemResolverService {
     );
 
     const resolvedItems: (MealEstimateItemOutput | null)[] =
-      new Array<MealEstimateItemOutput | null>(segments.length).fill(null);
+      new Array<MealEstimateItemOutput | null>(foodSegments.length).fill(null);
     const confidenceSources: Array<{
       confidenceLevel: 'LOW' | 'MEDIUM' | 'HIGH';
       confidenceScore: number;
@@ -153,13 +199,16 @@ export class MealItemResolverService {
 
     matchResults.forEach((match, index) => {
       if (match) {
-        resolvedItems[index] = match.structured.items[0];
+        resolvedItems[index] = withItemPlacement(
+          match.structured.items[0],
+          foodSegments[index],
+        );
         confidenceSources.push({
           confidenceLevel: match.structured.confidenceLevel,
           confidenceScore: match.structured.confidenceScore,
         });
       } else {
-        missingSegments.push(segments[index]);
+        missingSegments.push(foodSegments[index]);
         missingIndexes.push(index);
       }
     });
@@ -187,7 +236,10 @@ export class MealItemResolverService {
       );
 
       missingIndexes.forEach((originalIndex, i) => {
-        resolvedItems[originalIndex] = mappedItems[i];
+        resolvedItems[originalIndex] = withItemPlacement(
+          mappedItems[i],
+          missingSegments[i],
+        );
       });
       confidenceSources.push({
         confidenceLevel: batchNormalized.structured.confidenceLevel,
@@ -211,8 +263,12 @@ export class MealItemResolverService {
       );
     }
 
-    const finalItems = resolvedItems as MealEstimateItemOutput[];
-    const dbCount = segments.length - missingSegments.length;
+    exerciseItems.forEach(() => confidenceSources.push(exerciseConfidence));
+
+    const finalItems = resolvedItems.filter(
+      (item): item is MealEstimateItemOutput => item !== null,
+    );
+    const dbCount = foodSegments.length - missingSegments.length;
     const aiCount = missingSegments.length;
     const raw = buildCombinedRawEstimate(
       finalItems,
@@ -220,14 +276,16 @@ export class MealItemResolverService {
       aiCount,
       confidenceSources,
       dto.mealType,
+      exerciseItems,
     );
 
     this.logger.debug(
-      `Resolved meal "${dto.message}" into ${segments.length} item(s): ${dbCount} from Food DB, ${aiCount} via AI.`,
+      `Resolved message "${dto.message}" into ${foodSegments.length} food item(s) (${dbCount} from Food DB, ${aiCount} via AI) and ${exerciseItems.length} exercise item(s).`,
     );
 
     return {
       normalized: normalizeMealEstimate(raw, dto.mealType),
+      exerciseItems,
       providerModel,
       providerTokenInput,
       providerTokenOutput,
@@ -260,6 +318,7 @@ export class MealItemResolverService {
 
     return {
       normalized,
+      exerciseItems: [],
       providerModel: providerResponse.model,
       providerTokenInput: providerResponse.tokenInput,
       providerTokenOutput: providerResponse.tokenOutput,
@@ -284,4 +343,28 @@ export class MealItemResolverService {
       timeoutMs: Number(this.config.get<string>('AI_TIMEOUT_MS') ?? '30000'),
     };
   }
+}
+
+/** The absolute dates the segmentation model resolves relative phrasing
+ * against - always the user's own local calendar (dashboard-timezone.ts),
+ * never the server's. */
+function buildDateContextBlock(context: MealResolutionContext): string {
+  return [
+    `Date context: today's local date is ${context.todayLocalDate} (timezone ${context.timezone}).`,
+    `Yesterday was ${addDaysToLocalDate(context.todayLocalDate, -1)}.`,
+    `The day before yesterday was ${addDaysToLocalDate(context.todayLocalDate, -2)}.`,
+  ].join(' ');
+}
+
+/** Attaches the segment's resolved day/meal placement to a matched or
+ * AI-estimated food item so it survives into the stored estimate. */
+function withItemPlacement(
+  item: MealEstimateItemOutput,
+  segment: MealItemSegment,
+): MealEstimateItemOutput {
+  return {
+    ...item,
+    resolvedDate: segment.date,
+    mealSlot: segment.mealSlot,
+  };
 }

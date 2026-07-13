@@ -12,6 +12,7 @@ import {
   applyDailyCap,
   applyFatigueSuppression,
   evaluateNudgeRules,
+  nudgeNotificationTypes,
   nudgeThresholds,
   type NudgeType,
 } from './nudge-rules.util';
@@ -181,7 +182,7 @@ export class NudgeService {
   private async getRecentStatusesByType(
     userId: string,
   ): Promise<Partial<Record<NudgeType, NotificationStatus[]>>> {
-    const types = Object.values(NotificationType);
+    const types = nudgeNotificationTypes;
     const results = await Promise.all(
       types.map((type) =>
         this.prisma.notification.findMany({
@@ -207,10 +208,14 @@ export class NudgeService {
     endUtc: Date,
   ): Promise<[number, Set<NudgeType>]> {
     const rows = await this.prisma.notification.findMany({
-      where: { userId, createdAt: { gte: startUtc, lte: endUtc } },
+      where: {
+        userId,
+        createdAt: { gte: startUtc, lte: endUtc },
+        type: { in: nudgeNotificationTypes },
+      },
       select: { type: true },
     });
 
-    return [rows.length, new Set(rows.map((row) => row.type))];
+    return [rows.length, new Set(rows.map((row) => row.type as NudgeType))];
   }
 }

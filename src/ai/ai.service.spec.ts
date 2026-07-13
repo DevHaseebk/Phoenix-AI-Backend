@@ -35,7 +35,10 @@ describe('AiService', () => {
   const messageFindMany = jest.fn();
   const estimateFindFirst = jest.fn();
   const estimateUpdate = jest.fn();
+  const estimateCreate = jest.fn();
   const mealLogCreate = jest.fn();
+  const exerciseLogCreate = jest.fn();
+  const userProfileFindUnique = jest.fn();
   const transaction = jest.fn();
   const generateCoachReply = jest.fn();
   const generateMealEstimate = jest.fn();
@@ -52,7 +55,7 @@ describe('AiService', () => {
     aiMealEstimate: {
       findFirst: estimateFindFirst,
       update: estimateUpdate,
-      create: jest.fn(),
+      create: estimateCreate,
     },
     mealLog: { create: mealLogCreate },
   } as unknown as PrismaService;
@@ -182,6 +185,7 @@ describe('AiService', () => {
           reply: 'Review before saving.',
         },
       },
+      exerciseItems: [],
     });
     determineForUser.mockResolvedValue({
       state: 'ACTIVE_USER',
@@ -206,6 +210,7 @@ describe('AiService', () => {
       content: 'Assistant reply',
       createdAt: new Date('2026-07-07T10:00:00.000Z'),
     });
+    userProfileFindUnique.mockResolvedValue({ timezone: 'Asia/Karachi' });
     const transactionClient = {
       aiMealEstimate: {
         findFirst: estimateFindFirst,
@@ -213,6 +218,12 @@ describe('AiService', () => {
       },
       mealLog: {
         create: mealLogCreate,
+      },
+      exerciseLog: {
+        create: exerciseLogCreate,
+      },
+      userProfile: {
+        findUnique: userProfileFindUnique,
       },
     };
     transaction.mockImplementation(
@@ -333,8 +344,285 @@ describe('AiService', () => {
       },
       select: { id: true },
     });
-    expect(response.source).toBe(MealLogSource.AI_CHAT);
-    expect(response.items[0].calories).toBe(750);
+    expect(response.mealLogs).toHaveLength(1);
+    expect(response.mealLogs[0].source).toBe(MealLogSource.AI_CHAT);
+    expect(response.mealLogs[0].items[0].calories).toBe(750);
+    expect(response.exerciseLogs).toEqual([]);
+    expect(response.totals.calories).toBe(750);
+  });
+
+  it('confirms per-item resolved dates: back-dated food/exercise land on their own local day, grouped per meal', async () => {
+    estimateFindFirst.mockResolvedValue({
+      id: 'estimate-id',
+      userId: 'user-id',
+      originalText: 'last day breakfast 2 eggs, dinner roti, aur 30 min walk',
+      mealType: null,
+      status: AiMealEstimateStatus.DRAFT,
+      confidenceLevel: ConfidenceLevel.MEDIUM,
+      items: [
+        {
+          itemType: 'FOOD',
+          name: 'Boiled Egg',
+          quantityText: '2 x 1 large egg',
+          calories: 155,
+          proteinGrams: 13,
+          carbsGrams: 1,
+          fatGrams: 11,
+          fiberGrams: null,
+          resolvedDate: '2026-07-01',
+          mealSlot: MealType.BREAKFAST,
+        },
+        {
+          itemType: 'FOOD',
+          name: 'Roti',
+          quantityText: '1 roti',
+          calories: 120,
+          proteinGrams: 4,
+          carbsGrams: 25,
+          fatGrams: 1,
+          fiberGrams: null,
+          resolvedDate: '2026-07-01',
+          mealSlot: MealType.DINNER,
+        },
+        {
+          itemType: 'EXERCISE',
+          name: 'walk',
+          exerciseType: 'WALKING',
+          durationMinutes: 30,
+          distanceKm: null,
+          steps: null,
+          estimatedCaloriesBurned: 154,
+          resolvedDate: '2026-07-01',
+        },
+      ],
+    });
+    mealLogCreate.mockResolvedValue({
+      id: 'meal-log-id',
+      mealType: MealType.BREAKFAST,
+      description: 'last day breakfast 2 eggs, dinner roti, aur 30 min walk',
+      totalCalories: new Prisma.Decimal('155'),
+      totalProteinGrams: new Prisma.Decimal('13'),
+      totalCarbsGrams: new Prisma.Decimal('1'),
+      totalFatGrams: new Prisma.Decimal('11'),
+      status: MealLogStatus.ESTIMATED,
+      confidenceLevel: ConfidenceLevel.MEDIUM,
+      source: MealLogSource.AI_CHAT,
+      loggedAt: new Date('2026-07-01T07:00:00.000Z'),
+      note: 'Created from DailyFit Coach AI meal estimate.',
+      createdAt: new Date('2026-07-02T10:00:00.000Z'),
+      updatedAt: new Date('2026-07-02T10:00:00.000Z'),
+      items: [],
+    });
+    exerciseLogCreate.mockResolvedValue({
+      id: 'exercise-log-id',
+      exerciseType: 'WALKING',
+      durationMinutes: 30,
+      steps: null,
+      distanceKm: null,
+      estimatedCaloriesBurned: 154,
+      loggedAt: new Date('2026-07-01T07:00:00.000Z'),
+    });
+
+    const service = createService();
+    const response = await service.confirmMeal('user-id', {
+      estimateId: 'estimate-id',
+    });
+
+    // Two meal-slot groups on the same back-dated day -> two MealLogs.
+    expect(mealLogCreate).toHaveBeenCalledTimes(2);
+    const mealCalls = mealLogCreate.mock.calls as Array<
+      [{ data: { mealType: MealType; loggedAt: Date } }]
+    >;
+    // Karachi local 2026-07-01 12:00 (noon anchor) = 07:00 UTC - dated to the
+    // stated day, NOT the current timestamp.
+    expect(mealCalls[0][0].data.mealType).toBe(MealType.BREAKFAST);
+    expect(mealCalls[0][0].data.loggedAt.toISOString()).toBe(
+      '2026-07-01T07:00:00.000Z',
+    );
+    expect(mealCalls[1][0].data.mealType).toBe(MealType.DINNER);
+    expect(mealCalls[1][0].data.loggedAt.toISOString()).toBe(
+      '2026-07-01T07:00:00.000Z',
+    );
+    // The exercise item became a real ExerciseLog on the same day, confirmed
+    // through the same review flow (never silently written earlier).
+    expect(exerciseLogCreate).toHaveBeenCalledTimes(1);
+    const exerciseCall = (
+      exerciseLogCreate.mock.calls as Array<
+        [{ data: { exerciseType: string; loggedAt: Date; note: string } }]
+      >
+    )[0][0];
+    expect(exerciseCall.data.exerciseType).toBe('WALKING');
+    expect(exerciseCall.data.loggedAt.toISOString()).toBe(
+      '2026-07-01T07:00:00.000Z',
+    );
+    expect(response.exerciseLogs).toHaveLength(1);
+    expect(response.totals.caloriesBurned).toBe(154);
+  });
+
+  it('confirms an exercise-only estimate (no food items) instead of rejecting it', async () => {
+    estimateFindFirst.mockResolvedValue({
+      id: 'estimate-id',
+      userId: 'user-id',
+      originalText: '30 min walk ki',
+      mealType: null,
+      status: AiMealEstimateStatus.DRAFT,
+      confidenceLevel: ConfidenceLevel.MEDIUM,
+      items: [
+        {
+          itemType: 'EXERCISE',
+          name: 'walk',
+          exerciseType: 'WALKING',
+          durationMinutes: 30,
+          distanceKm: null,
+          steps: null,
+          estimatedCaloriesBurned: 154,
+          resolvedDate: null,
+        },
+      ],
+    });
+    exerciseLogCreate.mockResolvedValue({
+      id: 'exercise-log-id',
+      exerciseType: 'WALKING',
+      durationMinutes: 30,
+      steps: null,
+      distanceKm: null,
+      estimatedCaloriesBurned: 154,
+      loggedAt: new Date('2026-07-13T07:00:00.000Z'),
+    });
+
+    const service = createService();
+    const response = await service.confirmMeal('user-id', {
+      estimateId: 'estimate-id',
+    });
+
+    expect(mealLogCreate).not.toHaveBeenCalled();
+    expect(exerciseLogCreate).toHaveBeenCalledTimes(1);
+    expect(response.mealLogs).toEqual([]);
+    expect(response.exerciseLogs).toHaveLength(1);
+  });
+
+  it('intercepts a loggable chat message into the shared estimate card instead of a plain reply', async () => {
+    resolveMeal.mockResolvedValue({
+      normalized: {
+        status: AiMealEstimateStatus.DRAFT,
+        structured: {
+          intent: 'MEAL_ESTIMATE',
+          summary: 'Boiled Egg, walk',
+          confidenceLevel: ConfidenceLevel.MEDIUM,
+          confidenceScore: 0.7,
+          mealType: null,
+          items: [
+            {
+              name: 'Boiled Egg',
+              quantityText: '2 x 1 large egg',
+              calories: 155,
+              proteinGrams: 13,
+              carbsGrams: 1,
+              fatGrams: 11,
+              fiberGrams: null,
+              assumptions: [],
+              resolvedDate: '2026-07-12',
+              mealSlot: MealType.BREAKFAST,
+            },
+          ],
+          totals: {
+            calories: 155,
+            proteinGrams: 13,
+            carbsGrams: 1,
+            fatGrams: 11,
+            fiberGrams: null,
+          },
+          clarificationQuestions: [],
+          assumptions: [],
+          warnings: [],
+          reply: 'Boiled Egg plus a walk - review before saving.',
+        },
+      },
+      exerciseItems: [
+        {
+          name: 'walk',
+          exerciseType: 'WALKING',
+          durationMinutes: 30,
+          distanceKm: null,
+          steps: null,
+          estimatedCaloriesBurned: 154,
+          resolvedDate: '2026-07-12',
+          assumptions: [],
+        },
+      ],
+      providerModel: 'gemini-2.5-flash',
+      providerLatencyMs: 20,
+    });
+    estimateCreate.mockResolvedValue({
+      id: 'estimate-id',
+      status: AiMealEstimateStatus.DRAFT,
+    });
+
+    const service = createService();
+    const response = (await service.chat('user-id', {
+      message: 'kal maine 2 anday khaye aur 30 min walk ki',
+    })) as {
+      mealEstimate?: {
+        estimateId: string | null;
+        estimate: { exerciseItems: unknown[] };
+      };
+    };
+
+    // The shared pipeline handled it - no coach reply call was spent.
+    expect(generateCoachReply).not.toHaveBeenCalled();
+    expect(resolveMeal).toHaveBeenCalledTimes(1);
+    expect(response.mealEstimate?.estimateId).toBe('estimate-id');
+    expect(response.mealEstimate?.estimate.exerciseItems).toHaveLength(1);
+    // The saved assistant message carries the resolver's honest reply.
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: 'ASSISTANT',
+          content: 'Boiled Egg plus a walk - review before saving.',
+        }) as object,
+      }),
+    );
+    // Food and exercise stored together with the itemType discriminator.
+    expect(estimateCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              itemType: 'FOOD',
+              name: 'Boiled Egg',
+            }) as object,
+            expect.objectContaining({
+              itemType: 'EXERCISE',
+              name: 'walk',
+            }) as object,
+          ] as unknown,
+        }) as object,
+      }),
+    );
+  });
+
+  it('falls through to the normal coaching reply when segmentation finds nothing loggable in a keyword-matched chat message', async () => {
+    // Default resolveMeal mock returns zero items/exercise - e.g. "had a
+    // rough day" passes the cheap keyword filter but is not loggable.
+    const service = createService();
+    const response = await service.chat('user-id', {
+      message: 'I had a rough day, no energy for the gym',
+    });
+
+    expect(resolveMeal).toHaveBeenCalledTimes(1);
+    expect(generateCoachReply).toHaveBeenCalledTimes(1);
+    expect(response.message.content).toBe('Assistant reply');
+    expect(
+      (response as { mealEstimate?: unknown }).mealEstimate,
+    ).toBeUndefined();
+  });
+
+  it('never runs the estimate pipeline for a plain coaching question', async () => {
+    const service = createService();
+    await service.chat('user-id', { message: 'what should I eat for lunch?' });
+
+    expect(resolveMeal).not.toHaveBeenCalled();
+    expect(generateCoachReply).toHaveBeenCalledTimes(1);
   });
 
   it('rejects confirming another user or missing estimate', async () => {
@@ -497,10 +785,11 @@ describe('AiService', () => {
           reply: 'Review before saving.',
         },
       },
+      exerciseItems: [],
       providerModel: 'gemini-2.5-flash',
       providerLatencyMs: 20,
     });
-    (prisma.aiMealEstimate.create as unknown as jest.Mock).mockResolvedValue({
+    estimateCreate.mockResolvedValue({
       id: 'estimate-id',
       status: AiMealEstimateStatus.DRAFT,
     });
@@ -512,12 +801,19 @@ describe('AiService', () => {
 
     expect(resolveMeal).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'chicken biryani' }) as object,
-      expect.any(String) as string,
+      expect.objectContaining({
+        userContext: expect.any(String) as string,
+        timezone: 'Asia/Karachi',
+        todayLocalDate: '2026-07-07',
+        currentWeightKg: null,
+      }) as object,
     );
-    const userContextArg = (resolveMeal.mock.calls[0] as [unknown, string])[1];
+    const contextArg = (
+      resolveMeal.mock.calls[0] as [unknown, { userContext: string }]
+    )[1];
     expect(
       extractContextJson(
-        `User context (authoritative app data):\n${userContextArg}`,
+        `User context (authoritative app data):\n${contextArg.userContext}`,
       ).today,
     ).toBeDefined();
     expect(response.estimate?.calories).toBe(750);

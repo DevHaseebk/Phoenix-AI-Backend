@@ -1,11 +1,17 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import {
+  ActivityLevel,
+  Gender,
   MealLogStatus,
   MealLogSource,
   MealType,
   Prisma,
   UserStatus,
 } from '@prisma/client';
+import {
+  calculateBmr,
+  calculateTdee,
+} from '../common/utils/health-metrics.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { DashboardService } from './dashboard.service';
 import { DashboardSummaryRange } from './dto/dashboard-summary-query.dto';
@@ -34,8 +40,18 @@ describe('DashboardService', () => {
     weightLogFindMany.mockResolvedValue(createSummaryWeightLogs());
     waterLogFindMany.mockResolvedValue([{ amountMl: 500 }, { amountMl: 750 }]);
     exerciseLogFindMany.mockResolvedValue([
-      { durationMinutes: 30, steps: 4000, estimatedCaloriesBurned: 220 },
-      { durationMinutes: 15, steps: null, estimatedCaloriesBurned: null },
+      {
+        durationMinutes: 30,
+        steps: 4000,
+        estimatedCaloriesBurned: 220,
+        loggedAt: new Date('2026-07-06T10:00:00.000Z'),
+      },
+      {
+        durationMinutes: 15,
+        steps: null,
+        estimatedCaloriesBurned: null,
+        loggedAt: new Date('2026-07-06T11:00:00.000Z'),
+      },
     ]);
     mealLogFindMany.mockResolvedValue([
       createMealLog({
@@ -115,6 +131,109 @@ describe('DashboardService', () => {
         items: [{ foodName: 'Chicken Biryani', portionLabel: 'medium plate' }],
       },
     ]);
+    // Deficit = TDEE + burned - consumed, same shared formula as the AI
+    // context block.
+    const tdee = expectedTdee(150);
+    expect(response.calorieBalance).toEqual({
+      tdeeKcal: tdee,
+      caloriesConsumed: 850,
+      exerciseCaloriesBurned: 220,
+      deficitKcal: tdee + 220 - 850,
+      // Only 1 meal-logged day in the mocked week - below the 3-day
+      // minimum, so no weekly average/projection is claimed.
+      weekly: {
+        loggedDayCount: 1,
+        averageDailyDeficitKcal: null,
+        projectedFourWeekKg: null,
+      },
+    });
+  });
+
+  it('computes the weekly average deficit and 4-week projection from meal-logged days only', async () => {
+    // Today (2026-07-06) queries first, then the 7-day window queries.
+    mealLogFindMany
+      .mockReset()
+      .mockResolvedValueOnce([
+        createMealLog({
+          id: 'meal-log-id',
+          mealType: MealType.LUNCH,
+          totalCalories: '850',
+          totalProteinGrams: '45',
+          description: 'Chicken biryani',
+        }),
+      ])
+      .mockResolvedValueOnce([
+        {
+          totalCalories: new Prisma.Decimal('2000'),
+          loggedAt: new Date('2026-07-04T10:00:00.000Z'),
+        },
+        {
+          totalCalories: new Prisma.Decimal('2500'),
+          loggedAt: new Date('2026-07-05T10:00:00.000Z'),
+        },
+        {
+          totalCalories: new Prisma.Decimal('850'),
+          loggedAt: new Date('2026-07-06T10:00:00.000Z'),
+        },
+      ]);
+    exerciseLogFindMany
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          estimatedCaloriesBurned: 300,
+          loggedAt: new Date('2026-07-05T10:00:00.000Z'),
+        },
+        // An exercise-only day (no meal log) must NOT create a logged day.
+        {
+          estimatedCaloriesBurned: 500,
+          loggedAt: new Date('2026-07-01T10:00:00.000Z'),
+        },
+      ]);
+
+    const service = new DashboardService(prisma);
+    const response = await service.getToday(
+      'user-id',
+      new Date('2026-07-06T12:00:00.000Z'),
+    );
+
+    const tdee = expectedTdee(150);
+    // Per-logged-day deficits: (tdee-2000), (tdee+300-2500), (tdee-850).
+    const expectedAverage = Math.round(
+      (tdee - 2000 + (tdee + 300 - 2500) + (tdee - 850)) / 3,
+    );
+
+    expect(response.calorieBalance.weekly.loggedDayCount).toBe(3);
+    expect(response.calorieBalance.weekly.averageDailyDeficitKcal).toBe(
+      expectedAverage,
+    );
+    expect(response.calorieBalance.weekly.projectedFourWeekKg).toBe(
+      Math.round(((expectedAverage * 28) / 7700) * 10) / 10,
+    );
+  });
+
+  it('returns a null calorie balance when TDEE cannot be computed, without breaking the rest of the dashboard', async () => {
+    userFindUnique.mockResolvedValue(
+      createUser({
+        profile: {
+          ...createProfile(),
+          gender: null,
+          dateOfBirth: null,
+        } as unknown as ReturnType<typeof createProfile>,
+      }),
+    );
+
+    const service = new DashboardService(prisma);
+    const response = await service.getToday(
+      'user-id',
+      new Date('2026-07-06T12:00:00.000Z'),
+    );
+
+    expect(response.calorieBalance.tdeeKcal).toBeNull();
+    expect(response.calorieBalance.deficitKcal).toBeNull();
+    expect(response.calorieBalance.weekly.averageDailyDeficitKcal).toBeNull();
+    expect(response.calorieBalance.weekly.projectedFourWeekKg).toBeNull();
+    expect(response.todayProgress.calories.consumed).toBe(850);
   });
 
   it('returns safe empty state when profile and logs are missing', async () => {
@@ -346,7 +465,25 @@ describe('DashboardService', () => {
       proteinTargetGrams: new Prisma.Decimal('160'),
       currentWeightKg: new Prisma.Decimal('150'),
       targetWeightKg: new Prisma.Decimal('100'),
+      gender: Gender.MALE,
+      dateOfBirth: new Date('1998-01-01'),
+      heightCm: new Prisma.Decimal('188'),
+      activityLevel: ActivityLevel.SEDENTARY,
     };
+  }
+
+  function expectedTdee(weightKg: number): number {
+    return Math.round(
+      calculateTdee(
+        calculateBmr({
+          gender: Gender.MALE,
+          dateOfBirth: new Date('1998-01-01'),
+          heightCm: 188,
+          weightKg,
+        }),
+        ActivityLevel.SEDENTARY,
+      ),
+    );
   }
 
   function mockSummaryLogs() {
