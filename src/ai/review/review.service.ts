@@ -31,6 +31,7 @@ const fallbackTimezone = 'Asia/Karachi';
 /** Query with retrieveRelevantMemories() - a representative phrase, not the raw week data. */
 const reviewMemoryQuery = 'weekly progress patterns';
 const reviewMemoryTopK = 4;
+const defaultHistoryPageSize = 10;
 
 interface WeeklyReviewNarrative {
   summary: string;
@@ -88,6 +89,27 @@ export interface WeeklyReviewResponse {
   };
 }
 
+/** Compact row for the Progress-screen history list + per-week trend charts. */
+export interface WeeklyReviewHistoryItem {
+  id: string;
+  weekStart: string;
+  weekEnd: string;
+  consistencyPercentage: number;
+  weightChangeKg: number | null;
+  averageCalories: number;
+  averageProteinGrams: number;
+  partial: boolean;
+  aiGenerated: boolean;
+}
+
+export interface WeeklyReviewHistoryResponse {
+  items: WeeklyReviewHistoryItem[];
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+}
+
 @Injectable()
 export class ReviewService {
   private readonly logger = new Logger(ReviewService.name);
@@ -108,6 +130,42 @@ export class ReviewService {
     });
 
     return review ? toResponse(review) : null;
+  }
+
+  /**
+   * Paginated past-review history, most recent week first. Ownership-scoped by
+   * userId (never trusts a client-supplied user); returns only the compact
+   * fields the Progress screen's list + trend charts need, not the full
+   * narrative payload.
+   */
+  async getHistory(
+    userId: string,
+    query: { page?: number; limit?: number } = {},
+  ): Promise<WeeklyReviewHistoryResponse> {
+    await this.ensureActiveUser(userId);
+
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit =
+      query.limit && query.limit > 0 ? query.limit : defaultHistoryPageSize;
+    const skip = (page - 1) * limit;
+
+    const [total, reviews] = await Promise.all([
+      this.prisma.weeklyReview.count({ where: { userId } }),
+      this.prisma.weeklyReview.findMany({
+        where: { userId },
+        orderBy: { weekStartDate: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      items: reviews.map(toHistoryItem),
+      page,
+      limit,
+      total,
+      hasMore: skip + reviews.length < total,
+    };
   }
 
   async generate(
@@ -448,6 +506,24 @@ function buildPartialNarrative(
       'Log water at least a few times this week',
       'Add a weight check-in if you can',
     ],
+  };
+}
+
+function toHistoryItem(review: WeeklyReviewRow): WeeklyReviewHistoryItem {
+  const recommendations = (review.aiRecommendations ??
+    {}) as Partial<StoredRecommendations>;
+  const partial = recommendations.partial ?? false;
+
+  return {
+    id: review.id,
+    weekStart: review.weekStartDate.toISOString().slice(0, 10),
+    weekEnd: review.weekEndDate.toISOString().slice(0, 10),
+    consistencyPercentage: toNullableNumber(review.consistencyRate) ?? 0,
+    weightChangeKg: toNullableNumber(review.weightChangeKg),
+    averageCalories: toNullableNumber(review.avgCalories) ?? 0,
+    averageProteinGrams: toNullableNumber(review.avgProteinGrams) ?? 0,
+    partial,
+    aiGenerated: review.aiSummary !== null && !partial,
   };
 }
 

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AiProvider } from '../ai-provider.interface';
@@ -36,6 +36,8 @@ function createUser(overrides: Partial<{ profile: unknown }> = {}) {
 describe('ReviewService', () => {
   const userFindUnique = jest.fn();
   const weeklyReviewFindFirst = jest.fn();
+  const weeklyReviewFindMany = jest.fn();
+  const weeklyReviewCount = jest.fn();
   const weeklyReviewUpsert = jest.fn();
   const mealLogFindMany = jest.fn();
   const waterLogFindMany = jest.fn();
@@ -45,6 +47,8 @@ describe('ReviewService', () => {
     user: { findUnique: userFindUnique },
     weeklyReview: {
       findFirst: weeklyReviewFindFirst,
+      findMany: weeklyReviewFindMany,
+      count: weeklyReviewCount,
       upsert: weeklyReviewUpsert,
     },
     mealLog: { findMany: mealLogFindMany },
@@ -281,5 +285,109 @@ describe('ReviewService', () => {
     });
     expect(result?.metrics.averageCalories).toBe(2000);
     expect(result?.metrics.weightChangeKg).toBe(-1.5);
+  });
+
+  describe('getHistory', () => {
+    function historyRow(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        id: 'review-1',
+        userId: 'user-id',
+        weekStartDate: new Date('2024-01-01T00:00:00.000Z'),
+        weekEndDate: new Date('2024-01-07T00:00:00.000Z'),
+        avgCalories: new Prisma.Decimal('2000'),
+        avgProteinGrams: new Prisma.Decimal('140'),
+        avgSteps: new Prisma.Decimal('7000'),
+        avgWaterMl: new Prisma.Decimal('2500'),
+        startWeightKg: new Prisma.Decimal('80'),
+        endWeightKg: new Prisma.Decimal('78.5'),
+        weightChangeKg: new Prisma.Decimal('-1.5'),
+        consistencyRate: new Prisma.Decimal('82'),
+        aiSummary: 'Solid week.',
+        aiRecommendations: { partial: false },
+        generatedByProvider: 'gemini',
+        generatedAt: new Date('2024-01-08T00:00:00.000Z'),
+        viewedAt: null,
+        createdAt: new Date('2024-01-08T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-08T00:00:00.000Z'),
+        ...overrides,
+      };
+    }
+
+    it('returns paginated compact items, most recent first, scoped to the user', async () => {
+      weeklyReviewCount.mockResolvedValue(3);
+      weeklyReviewFindMany.mockResolvedValue([historyRow()]);
+      const service = buildService({});
+
+      const result = await service.getHistory('user-id', { page: 1, limit: 2 });
+
+      // Ownership + ordering + pagination are enforced in the query, not client-trusted.
+      expect(weeklyReviewFindMany).toHaveBeenCalledWith({
+        where: { userId: 'user-id' },
+        orderBy: { weekStartDate: 'desc' },
+        skip: 0,
+        take: 2,
+      });
+      expect(weeklyReviewCount).toHaveBeenCalledWith({
+        where: { userId: 'user-id' },
+      });
+      expect(result.total).toBe(3);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(2);
+      expect(result.hasMore).toBe(true);
+      expect(result.items).toEqual([
+        {
+          id: 'review-1',
+          weekStart: '2024-01-01',
+          weekEnd: '2024-01-07',
+          consistencyPercentage: 82,
+          weightChangeKg: -1.5,
+          averageCalories: 2000,
+          averageProteinGrams: 140,
+          partial: false,
+          aiGenerated: true,
+        },
+      ]);
+    });
+
+    it('applies page offset and reports hasMore false on the last page', async () => {
+      weeklyReviewCount.mockResolvedValue(3);
+      weeklyReviewFindMany.mockResolvedValue([historyRow({ id: 'review-3' })]);
+      const service = buildService({});
+
+      const result = await service.getHistory('user-id', { page: 2, limit: 2 });
+
+      expect(weeklyReviewFindMany).toHaveBeenCalledWith({
+        where: { userId: 'user-id' },
+        orderBy: { weekStartDate: 'desc' },
+        skip: 2,
+        take: 2,
+      });
+      expect(result.hasMore).toBe(false);
+    });
+
+    it('defaults to page 1 and marks partial weeks as not AI-generated', async () => {
+      weeklyReviewCount.mockResolvedValue(1);
+      weeklyReviewFindMany.mockResolvedValue([
+        historyRow({ aiSummary: null, aiRecommendations: { partial: true } }),
+      ]);
+      const service = buildService({});
+
+      const result = await service.getHistory('user-id');
+
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(10);
+      expect(result.items[0].partial).toBe(true);
+      expect(result.items[0].aiGenerated).toBe(false);
+    });
+
+    it('rejects an inactive/unknown user (ownership guard)', async () => {
+      userFindUnique.mockResolvedValueOnce(null);
+      const service = buildService({});
+
+      await expect(service.getHistory('user-id')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(weeklyReviewFindMany).not.toHaveBeenCalled();
+    });
   });
 });

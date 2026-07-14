@@ -30,6 +30,7 @@ const optionalEnvKeys = [
   'WHATSAPP_PHONE_NUMBER_ID',
   'CORS_ORIGINS',
   'USDA_API_KEY',
+  'GOOGLE_CLIENT_ID',
 ] as const;
 
 type RequiredEnvKey = (typeof requiredEnvKeys)[number];

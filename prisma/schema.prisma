@@ -139,6 +139,12 @@ model User {
   id              String           @id @default(uuid())
   email           String?          @unique
   passwordHash    String?
+  // Set only for accounts created/linked via Google Sign-In (D-037). Nullable
+  // and unique - an email/password-only user has no Google identity yet, and
+  // may never link one. passwordHash is already nullable, so a Google-only
+  // user simply has no password (blocked from password login by the existing
+  // `!user.passwordHash` guard in AuthService.login()) - no sentinel needed.
+  googleId        String?          @unique
   fullName        String?
   phone           String?          @unique
   status          UserStatus       @default(ACTIVE)

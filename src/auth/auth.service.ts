@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -7,11 +8,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import type { StringValue } from 'ms';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { LoginDto } from './dto/login.dto';
+import { GoogleAuthDto } from './dto/google-auth.dto';
+import { LoginDeviceDto, LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
+import { hashRefreshToken } from './refresh-token-hash.util';
 
 export interface SignupUserResponse {
   id: string;
@@ -46,6 +50,11 @@ export class AuthService {
     'project-phoenix-dummy-password',
     { type: argon2.argon2id },
   );
+  // Not constructor-injected (a default/undecorated param would still need a
+  // DI provider) - a plain field keeps `new AuthService(prisma, jwt, config)`
+  // working unchanged in existing tests. Tests for the Google flow mock the
+  // OAuth2Client.prototype.verifyIdToken method instead.
+  private readonly googleClient = new OAuth2Client();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -137,56 +146,95 @@ export class AuthService {
       throw this.invalidCredentials();
     }
 
-    const accessToken = await this.signAccessToken({
-      id: user.id,
-      email: user.email,
-      status: user.status,
-    });
-    const refreshToken = randomBytes(64).toString('base64url');
-    const tokenHash = this.hashRefreshToken(refreshToken);
-    const expiresAt = new Date(
-      Date.now() +
-        this.durationToMilliseconds(
-          this.config.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN'),
-        ),
+    return this.issueSession(user, metadata, loginDto.device);
+  }
+
+  /**
+   * Google Sign-In via ID-token verification (D-037) - not a server-redirect
+   * OAuth dance. The frontend uses Google Identity Services to obtain an ID
+   * token client-side and posts it here; google-auth-library verifies its
+   * signature/audience/expiry against Google's own keys (never hand-rolled).
+   * googleId-first lookup handles a returning Google user even if they've
+   * since changed their Google account's display name; falling back to an
+   * email match links Google sign-in onto an existing password account
+   * (password login keeps working - passwordHash is untouched). A brand-new
+   * email creates a user exactly like signup() does, except passwordHash
+   * stays null (already-nullable column) and emailVerifiedAt is set since
+   * Google has already verified it - no separate email-verification flow
+   * needed for these accounts.
+   */
+  async loginWithGoogle(
+    googleAuthDto: GoogleAuthDto,
+    metadata: LoginRequestMetadata = {},
+  ): Promise<LoginResponse> {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+
+    if (!clientId) {
+      throw new BadRequestException('Google sign-in is not configured');
+    }
+
+    const payload = await this.verifyGoogleIdToken(
+      googleAuthDto.idToken,
+      clientId,
     );
 
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        tokenHash,
-        deviceName: loginDto.device?.deviceName,
-        deviceType: loginDto.device?.deviceType,
-        userAgent: metadata.userAgent,
-        ipAddress: metadata.ipAddress,
-        expiresAt,
-      },
-    });
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastActiveAt: new Date() },
+    if (!payload.email || payload.email_verified !== true) {
+      throw new UnauthorizedException('Google account email is not verified');
+    }
+
+    const email = payload.email.trim().toLowerCase();
+    const googleId = payload.sub;
+
+    const userSelect = {
+      id: true,
+      fullName: true,
+      email: true,
+      status: true,
+      deletedAt: true,
+    } as const;
+
+    let user = await this.prisma.user.findUnique({
+      where: { googleId },
+      select: userSelect,
     });
 
-    return {
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        status: user.status,
-      },
-      tokens: {
-        accessToken,
-        refreshToken,
-      },
-    };
+    if (!user) {
+      const existingByEmail = await this.prisma.user.findUnique({
+        where: { email },
+        select: userSelect,
+      });
+
+      user = existingByEmail
+        ? await this.prisma.user.update({
+            where: { id: existingByEmail.id },
+            data: { googleId },
+            select: userSelect,
+          })
+        : await this.prisma.user.create({
+            data: {
+              email,
+              fullName: payload.name?.trim() || null,
+              googleId,
+              emailVerifiedAt: new Date(),
+            },
+            select: userSelect,
+          });
+    }
+
+    if (user.status !== UserStatus.ACTIVE || user.deletedAt !== null) {
+      throw this.invalidCredentials();
+    }
+
+    return this.issueSession(user, metadata, googleAuthDto.device);
   }
 
   async refreshAccessToken(
     refreshToken: string,
   ): Promise<RefreshAccessTokenResponse> {
     const storedRefreshToken = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash: this.hashRefreshToken(refreshToken) },
+      where: { tokenHash: hashRefreshToken(refreshToken) },
       select: {
+        id: true,
         expiresAt: true,
         revokedAt: true,
         user: {
@@ -215,6 +263,12 @@ export class AuthService {
       'JWT_ACCESS_EXPIRES_IN',
     );
 
+    await this.prisma.refreshToken.update({
+      where: { id: storedRefreshToken.id },
+      data: { lastUsedAt: new Date() },
+      select: { id: true },
+    });
+
     return {
       accessToken: await this.signAccessToken({
         id: storedRefreshToken.user.id,
@@ -227,7 +281,7 @@ export class AuthService {
 
   async logout(refreshToken: string): Promise<void> {
     const storedRefreshToken = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash: this.hashRefreshToken(refreshToken) },
+      where: { tokenHash: hashRefreshToken(refreshToken) },
       select: {
         id: true,
         revokedAt: true,
@@ -242,6 +296,83 @@ export class AuthService {
       where: { id: storedRefreshToken.id },
       data: { revokedAt: new Date() },
     });
+  }
+
+  /** Shared by login() and loginWithGoogle() - issues tokens, records the device/session, and stamps lastActiveAt. */
+  private async issueSession(
+    user: {
+      id: string;
+      fullName: string | null;
+      email: string | null;
+      status: UserStatus;
+    },
+    metadata: LoginRequestMetadata,
+    device?: LoginDeviceDto,
+  ): Promise<LoginResponse> {
+    const accessToken = await this.signAccessToken({
+      id: user.id,
+      email: user.email,
+      status: user.status,
+    });
+    const refreshToken = randomBytes(64).toString('base64url');
+    const tokenHash = hashRefreshToken(refreshToken);
+    const expiresAt = new Date(
+      Date.now() +
+        this.durationToMilliseconds(
+          this.config.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN'),
+        ),
+    );
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        deviceName: device?.deviceName,
+        deviceType: device?.deviceType,
+        userAgent: metadata.userAgent,
+        ipAddress: metadata.ipAddress,
+        expiresAt,
+      },
+    });
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastActiveAt: new Date() },
+      select: { id: true },
+    });
+
+    return {
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        status: user.status,
+      },
+      tokens: {
+        accessToken,
+        refreshToken,
+      },
+    };
+  }
+
+  private async verifyGoogleIdToken(
+    idToken: string,
+    clientId: string,
+  ): Promise<TokenPayload> {
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken,
+        audience: clientId,
+      });
+      const payload = ticket.getPayload();
+
+      if (!payload) {
+        throw new Error('Google ID token had no payload');
+      }
+
+      return payload;
+    } catch {
+      throw new UnauthorizedException('Invalid Google credential');
+    }
   }
 
   private async verifyAgainstDummyHash(password: string): Promise<void> {
@@ -266,10 +397,6 @@ export class AuthService {
         ),
       },
     );
-  }
-
-  private hashRefreshToken(refreshToken: string): string {
-    return createHash('sha256').update(refreshToken).digest('hex');
   }
 
   private invalidCredentials(): UnauthorizedException {

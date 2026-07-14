@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.interface';
 import { successResponse } from '../../common/responses/response.helper';
 import { GenerateWeeklyReviewDto } from './dto/generate-weekly-review.dto';
+import { ListWeeklyReviewsQueryDto } from './dto/list-weekly-reviews-query.dto';
 import { ReviewService } from './review.service';
 
 @ApiTags('Reviews')
@@ -23,6 +24,17 @@ export class ReviewsController {
   @ApiOkResponse({ description: 'Fetched successfully' })
   async latest(@CurrentUser() currentUser: AuthenticatedUser) {
     const data = await this.reviewService.getLatest(currentUser.userId);
+
+    return successResponse(data, 'Fetched successfully', {});
+  }
+
+  @Get('history')
+  @ApiOkResponse({ description: 'Fetched successfully' })
+  async history(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Query() query: ListWeeklyReviewsQueryDto,
+  ) {
+    const data = await this.reviewService.getHistory(currentUser.userId, query);
 
     return successResponse(data, 'Fetched successfully', {});
   }
