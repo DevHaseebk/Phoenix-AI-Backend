@@ -39,6 +39,8 @@ import {
   MealItemResolverService,
   MealResolutionResult,
 } from './food/meal-item-resolver.service';
+import { SubscriptionAccessService } from '../billing/subscription-access.service';
+import type { AiGateResult } from '../billing/subscription-access.constants';
 import { formatMemoryBlock, MemoryService } from './memory/memory.service';
 import { formatKnowledgeBlock, RagService } from './rag/rag.service';
 import { UserStateService } from './user-state/user-state.service';
@@ -169,6 +171,7 @@ export class AiService {
     private readonly memoryService: MemoryService,
     private readonly userStateService: UserStateService,
     private readonly mealItemResolverService: MealItemResolverService,
+    private readonly subscriptionAccessService: SubscriptionAccessService,
   ) {}
 
   async chat(userId: string, dto: ChatDto) {
@@ -206,6 +209,26 @@ export class AiService {
       };
     }
 
+    // Subscription/Trial gate (docs/16_Claude_Code_Handover.md): checked
+    // after the safety-flag short-circuit (which never calls the AI
+    // provider, so it shouldn't consume trial quota either) but before any
+    // AI-provider-calling work below - a LOCKED/limit-reached user never
+    // reaches the RAG/memory/segmentation/coach-reply calls that cost money.
+    const gate = await this.subscriptionAccessService.checkAiCoachAccess(
+      userId,
+      'CHAT',
+    );
+
+    if (!gate.allowed) {
+      return this.buildBillingGateResponse({
+        userId,
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        gate,
+        safetyFlags,
+      });
+    }
+
     const userContext = await this.buildUserContext(userId);
 
     // Unified logging interception: when a chat message plausibly describes
@@ -227,6 +250,10 @@ export class AiService {
       });
 
       if (intercepted) {
+        if (gate.level === 'TRIAL_LIMITED') {
+          await this.subscriptionAccessService.recordUsage(userId, 'CHAT');
+        }
+
         return intercepted;
       }
     }
@@ -301,6 +328,10 @@ export class AiService {
 
     await this.touchConversation(conversation.id);
 
+    if (gate.level === 'TRIAL_LIMITED') {
+      await this.subscriptionAccessService.recordUsage(userId, 'CHAT');
+    }
+
     // Fire-and-forget: extraction never blocks the response, and never throws.
     void this.memoryService.extractAndSaveMemory(
       userId,
@@ -357,6 +388,33 @@ export class AiService {
       };
     }
 
+    const gate = await this.subscriptionAccessService.checkAiCoachAccess(
+      userId,
+      'MEAL_ESTIMATE',
+    );
+
+    if (!gate.allowed) {
+      const assistant = await this.saveAssistantMessage({
+        userId,
+        conversationId: conversation.id,
+        content: gate.message ?? 'Please upgrade to continue.',
+      });
+
+      return {
+        conversationId: conversation.id,
+        estimateId: null,
+        status: AiMealEstimateStatus.NEEDS_CLARIFICATION,
+        assistantMessage: assistant.content,
+        estimate: null,
+        safetyFlags,
+        billing: {
+          blocked: true,
+          reason: gate.reason,
+          message: gate.message,
+        },
+      };
+    }
+
     // Food Database first, now via the unified day-activity segmentation
     // pipeline (docs/16_Claude_Code_Handover.md): an exact whole-message DB
     // match still skips the AI provider entirely; anything else is segmented
@@ -382,6 +440,10 @@ export class AiService {
 
     await this.touchConversation(conversation.id);
 
+    if (gate.level === 'TRIAL_LIMITED') {
+      await this.subscriptionAccessService.recordUsage(userId, 'MEAL_ESTIMATE');
+    }
+
     return {
       conversationId: conversation.id,
       estimateId: persisted.estimateId,
@@ -389,6 +451,42 @@ export class AiService {
       assistantMessage: persisted.assistantMessage.content,
       estimate: persisted.estimatePayload,
       safetyFlags,
+    };
+  }
+
+  /**
+   * Builds chat()'s response when the Subscription/Trial gate blocks the
+   * request (LOCKED or TRIAL_LIMIT_REACHED) - a friendly assistant message
+   * persisted like any other reply (so it shows in conversation history
+   * normally) rather than an HTTP error, per the task's "not a generic
+   * error" instruction. Never calls the AI provider or spends trial quota.
+   */
+  private async buildBillingGateResponse(input: {
+    userId: string;
+    conversationId: string;
+    userMessageId: string;
+    gate: AiGateResult;
+    safetyFlags: AiSafetyFlags;
+  }) {
+    const assistant = await this.saveAssistantMessage({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      content: input.gate.message ?? 'Please upgrade to continue.',
+    });
+
+    await this.touchConversation(input.conversationId);
+
+    return {
+      conversationId: input.conversationId,
+      userMessageId: input.userMessageId,
+      message: assistant,
+      suggestions: ['Upgrade to Pro'],
+      safetyFlags: input.safetyFlags,
+      billing: {
+        blocked: true,
+        reason: input.gate.reason,
+        message: input.gate.message,
+      },
     };
   }
 

@@ -167,6 +167,8 @@ model User {
   weeklyReviews   WeeklyReview[]
   userBadges      UserBadge[]
   refreshTokens   RefreshToken[]
+  subscription    Subscription?
+  aiUsageEvents   AiUsageEvent[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -740,4 +742,58 @@ model UserBadge {
   @@unique([userId, badgeKey])
   @@index([userId])
   @@map("user_badges")
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+// Subscription/Trial Flow (single Pro tier, Stripe test mode). One row per
+// user, created automatically at signup with a 7-day TRIALING window - see
+// billing/subscription.service.ts for the access-level derivation
+// (getSubscriptionAccessLevel) that reads this row. stripeCustomerId/
+// stripeSubscriptionId stay null until the user actually completes Stripe
+// Checkout at least once. accessOverride is the manual comp mechanism
+// (docs/16_Claude_Code_Handover.md) - true always yields FULL_UNLIMITED
+// regardless of status/trialEndsAt.
+model Subscription {
+  id                   String             @id @default(uuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status               SubscriptionStatus @default(TRIALING)
+  trialEndsAt          DateTime?
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  accessOverride       Boolean            @default(false)
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// One row per gated AI Coach action a TRIAL_LIMITED user actually completes
+// (chat reply, meal estimate, meal-plan generation, weekly-review
+// generation) - counted per local day (subscription/subscription-access
+//.service.ts, reusing dashboard-timezone.ts's local-day helper, same as
+// every other "today" calculation in this app) to enforce the 7-day trial's
+// 3/day cap. Deliberately a separate small table rather than counting
+// AiMessage rows: meal-plan/weekly-review generation create no AiMessage row
+// at all, so a single shared counter needed a home that isn't tied to chat
+// specifically. FULL_UNLIMITED users are never recorded here (nothing to
+// cap), keeping this table's size proportional to trial usage only.
+model AiUsageEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature   String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("ai_usage_events")
 }

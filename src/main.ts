@@ -29,7 +29,11 @@ function parseAllowedOrigins(
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true exposes req.rawBody (populated only for the routes that
+  // need it) - required to verify the Stripe webhook signature
+  // (billing.controller.ts) against the exact bytes Stripe signed, since
+  // Nest's default body-parser only keeps the parsed JSON.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const config = app.get(ConfigService);
   const nodeEnv = config.getOrThrow<string>('NODE_ENV');
   const port = config.getOrThrow<number>('PORT');

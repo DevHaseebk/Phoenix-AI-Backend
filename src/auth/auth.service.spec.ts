@@ -83,6 +83,12 @@ describe('AuthService', () => {
         email: 'haseeb@example.com',
         fullName: 'Haseeb',
         passwordHash: expect.any(String) as string,
+        subscription: {
+          create: {
+            status: 'TRIALING',
+            trialEndsAt: expect.any(Date) as Date,
+          },
+        },
       },
       select: {
         id: true,
@@ -506,6 +512,12 @@ describe('AuthService', () => {
           fullName: 'Haseeb Khan',
           googleId: 'google-sub-123',
           emailVerifiedAt: expect.any(Date) as Date,
+          subscription: {
+            create: {
+              status: 'TRIALING',
+              trialEndsAt: expect.any(Date) as Date,
+            },
+          },
         },
         select: expect.any(Object) as object,
       });

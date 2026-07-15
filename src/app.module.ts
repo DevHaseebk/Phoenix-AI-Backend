@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
+import { BillingModule } from './billing/billing.module';
 import { validateEnvironment } from './config/env.validation';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module';
     OnboardingModule,
     LogsModule,
     DashboardModule,
+    BillingModule,
     AiModule,
   ],
 })

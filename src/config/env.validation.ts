@@ -31,6 +31,10 @@ const optionalEnvKeys = [
   'CORS_ORIGINS',
   'USDA_API_KEY',
   'GOOGLE_CLIENT_ID',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'STRIPE_PRICE_ID',
+  'FRONTEND_URL',
 ] as const;
 
 type RequiredEnvKey = (typeof requiredEnvKeys)[number];

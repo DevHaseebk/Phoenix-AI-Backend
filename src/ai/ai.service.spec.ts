@@ -21,6 +21,7 @@ import { DashboardService } from '../dashboard/dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiProvider } from './ai-provider.interface';
 import { AiService } from './ai.service';
+import type { SubscriptionAccessService } from '../billing/subscription-access.service';
 import { MealItemResolverService } from './food/meal-item-resolver.service';
 import { MemoryService } from './memory/memory.service';
 import { RagService } from './rag/rag.service';
@@ -95,6 +96,19 @@ describe('AiService', () => {
   const mealItemResolverService = {
     resolveMeal,
   } as unknown as MealItemResolverService;
+  const checkAiCoachAccess = jest.fn();
+  const recordUsage = jest.fn();
+  const subscriptionAccessService = {
+    checkAiCoachAccess,
+    recordUsage,
+  } as unknown as SubscriptionAccessService;
+
+  beforeEach(() => {
+    checkAiCoachAccess.mockResolvedValue({
+      allowed: true,
+      level: 'FULL_UNLIMITED',
+    });
+  });
 
   function createService(): AiService {
     return new AiService(
@@ -106,6 +120,7 @@ describe('AiService', () => {
       memoryService,
       userStateService,
       mealItemResolverService,
+      subscriptionAccessService,
     );
   }
 

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { BillingModule } from '../billing/billing.module';
 import { DashboardModule } from '../dashboard/dashboard.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AI_PROVIDER } from './ai-provider.interface';
@@ -27,7 +28,7 @@ import { RewardsService } from './rewards/rewards.service';
 import { UserStateService } from './user-state/user-state.service';
 
 @Module({
-  imports: [AuthModule, PrismaModule, DashboardModule],
+  imports: [AuthModule, PrismaModule, DashboardModule, BillingModule],
   controllers: [
     AiController,
     MemoriesController,

@@ -12,6 +12,7 @@ import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import type { StringValue } from 'ms';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { SubscriptionAccessService } from '../billing/subscription-access.service';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { LoginDeviceDto, LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
@@ -85,6 +86,13 @@ export class AuthService {
           email,
           fullName,
           passwordHash,
+          // 7-day trial, no card required (D-122/123/124 MVP scope) -
+          // billing/subscription-access.service.ts's static helper is the
+          // single source of the trial-length/status defaults, reused
+          // identically by loginWithGoogle()'s new-user branch below.
+          subscription: {
+            create: SubscriptionAccessService.trialSubscriptionCreateData(),
+          },
         },
         select: {
           id: true,
@@ -216,6 +224,9 @@ export class AuthService {
               fullName: payload.name?.trim() || null,
               googleId,
               emailVerifiedAt: new Date(),
+              subscription: {
+                create: SubscriptionAccessService.trialSubscriptionCreateData(),
+              },
             },
             select: userSelect,
           });
