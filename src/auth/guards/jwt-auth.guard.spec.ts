@@ -1,7 +1,7 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
@@ -48,7 +48,9 @@ describe('JwtAuthGuard', () => {
     findUnique.mockResolvedValue({
       id: 'user-id',
       email: 'haseeb@example.com',
+      fullName: 'Haseeb',
       status: UserStatus.ACTIVE,
+      role: UserRole.USER,
       deletedAt: null,
     });
     const request: MockRequest = {
@@ -68,14 +70,18 @@ describe('JwtAuthGuard', () => {
       select: {
         id: true,
         email: true,
+        fullName: true,
         status: true,
+        role: true,
         deletedAt: true,
       },
     });
     expect(request.user).toEqual({
       userId: 'user-id',
       email: 'haseeb@example.com',
+      fullName: 'Haseeb',
       status: UserStatus.ACTIVE,
+      role: UserRole.USER,
     });
   });
 

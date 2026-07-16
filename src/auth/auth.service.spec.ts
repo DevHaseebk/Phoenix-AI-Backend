@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { OAuth2Client } from 'google-auth-library';
 import { createHash } from 'node:crypto';
@@ -18,6 +18,7 @@ describe('AuthService', () => {
   const userUpdate = jest.fn();
   const refreshTokenCreate = jest.fn();
   const refreshTokenFindUnique = jest.fn();
+  const refreshTokenFindFirst = jest.fn();
   const refreshTokenUpdate = jest.fn();
   const prisma = {
     user: {
@@ -28,9 +29,19 @@ describe('AuthService', () => {
     refreshToken: {
       create: refreshTokenCreate,
       findUnique: refreshTokenFindUnique,
+      findFirst: refreshTokenFindFirst,
       update: refreshTokenUpdate,
     },
   } as unknown as PrismaService;
+  const sendMailFireAndForget = jest.fn();
+  const mailService = {
+    sendMail: jest.fn().mockResolvedValue(undefined),
+    sendMailFireAndForget,
+  } as unknown as import('../mail/mail.service').MailService;
+  const sendVerificationEmail = jest.fn().mockResolvedValue(undefined);
+  const emailVerificationService = {
+    sendVerificationEmail,
+  } as unknown as import('./email-verification.service').EmailVerificationService;
   const signAsync = jest.fn();
   const jwtService = {
     signAsync,
@@ -56,6 +67,8 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    refreshTokenFindFirst.mockResolvedValue(null);
+    sendVerificationEmail.mockResolvedValue(undefined);
   });
 
   it('creates a user with normalized email and hashed password', async () => {
@@ -67,7 +80,13 @@ describe('AuthService', () => {
     });
     findUnique.mockResolvedValue(null);
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
     const response = await service.signup({
       fullName: ' Haseeb ',
       email: ' HASEEB@example.com ',
@@ -118,7 +137,13 @@ describe('AuthService', () => {
   it('rejects duplicate email registration', async () => {
     findUnique.mockResolvedValue({ id: 'existing-user-id' });
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
 
     await expect(
       service.signup({
@@ -146,7 +171,13 @@ describe('AuthService', () => {
     refreshTokenCreate.mockResolvedValue({ id: 'refresh-token-id' });
     userUpdate.mockResolvedValue({ id: 'user-id' });
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
     const response = await service.login(
       {
         email: ' HASEEB@example.com ',
@@ -221,10 +252,82 @@ describe('AuthService', () => {
     });
   });
 
+  it('sends a new-login alert when this exact device has not logged in recently', async () => {
+    findUnique.mockResolvedValue({
+      id: 'user-id',
+      fullName: 'Haseeb',
+      email: 'haseeb@example.com',
+      passwordHash: await argon2.hash('StrongPassword123', {
+        type: argon2.argon2id,
+      }),
+      status: 'ACTIVE',
+      deletedAt: null,
+    });
+    signAsync.mockResolvedValue('jwt-access-token');
+    refreshTokenCreate.mockResolvedValue({ id: 'refresh-token-id' });
+    userUpdate.mockResolvedValue({ id: 'user-id' });
+    refreshTokenFindFirst.mockResolvedValue(null); // no recent same-device session
+
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
+    await service.login({
+      email: 'haseeb@example.com',
+      password: 'StrongPassword123',
+      device: { deviceName: 'Chrome on Windows', deviceType: 'WEB' },
+    });
+
+    expect(sendMailFireAndForget).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'haseeb@example.com' }),
+    );
+  });
+
+  it('skips the new-login alert when this exact device logged in recently', async () => {
+    findUnique.mockResolvedValue({
+      id: 'user-id',
+      fullName: 'Haseeb',
+      email: 'haseeb@example.com',
+      passwordHash: await argon2.hash('StrongPassword123', {
+        type: argon2.argon2id,
+      }),
+      status: 'ACTIVE',
+      deletedAt: null,
+    });
+    signAsync.mockResolvedValue('jwt-access-token');
+    refreshTokenCreate.mockResolvedValue({ id: 'refresh-token-id' });
+    userUpdate.mockResolvedValue({ id: 'user-id' });
+    refreshTokenFindFirst.mockResolvedValue({ id: 'recent-session-id' }); // same device seen recently
+
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
+    await service.login({
+      email: 'haseeb@example.com',
+      password: 'StrongPassword123',
+      device: { deviceName: 'Chrome on Windows', deviceType: 'WEB' },
+    });
+
+    expect(sendMailFireAndForget).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid login credentials with a generic error', async () => {
     findUnique.mockResolvedValue(null);
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
 
     await expect(
       service.login({
@@ -248,7 +351,13 @@ describe('AuthService', () => {
       deletedAt: null,
     });
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
 
     await expect(
       service.login({
@@ -257,6 +366,148 @@ describe('AuthService', () => {
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(refreshTokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('promotes ADMIN_BOOTSTRAP_EMAIL to ADMIN on first matching login', async () => {
+    const passwordHash = await argon2.hash('StrongPassword123', {
+      type: argon2.argon2id,
+    });
+    findUnique.mockResolvedValue({
+      id: 'founder-id',
+      fullName: 'Founder',
+      email: 'founder@example.com',
+      passwordHash,
+      status: 'ACTIVE',
+      role: UserRole.USER,
+      deletedAt: null,
+    });
+    signAsync.mockResolvedValue('jwt-access-token');
+    refreshTokenCreate.mockResolvedValue({ id: 'refresh-token-id' });
+    userUpdate.mockResolvedValue({ id: 'founder-id' });
+
+    const bootstrapConfig = {
+      ...config,
+      get: jest.fn((key: string) => {
+        const values: Record<string, string> = {
+          GOOGLE_CLIENT_ID: 'test-google-client-id',
+          ADMIN_BOOTSTRAP_EMAIL: 'Founder@example.com ',
+        };
+
+        return values[key];
+      }),
+    } as unknown as ConfigService;
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      bootstrapConfig,
+      mailService,
+      emailVerificationService,
+    );
+
+    await service.login({
+      email: 'founder@example.com',
+      password: 'StrongPassword123',
+    });
+
+    expect(userUpdate).toHaveBeenCalledWith({
+      where: { id: 'founder-id' },
+      data: { role: UserRole.ADMIN },
+      select: { id: true },
+    });
+  });
+
+  it('does not re-promote or touch an already-ADMIN bootstrap account', async () => {
+    const passwordHash = await argon2.hash('StrongPassword123', {
+      type: argon2.argon2id,
+    });
+    findUnique.mockResolvedValue({
+      id: 'founder-id',
+      fullName: 'Founder',
+      email: 'founder@example.com',
+      passwordHash,
+      status: 'ACTIVE',
+      role: UserRole.ADMIN,
+      deletedAt: null,
+    });
+    signAsync.mockResolvedValue('jwt-access-token');
+    refreshTokenCreate.mockResolvedValue({ id: 'refresh-token-id' });
+    userUpdate.mockResolvedValue({ id: 'founder-id' });
+
+    const bootstrapConfig = {
+      ...config,
+      get: jest.fn((key: string) => {
+        const values: Record<string, string> = {
+          ADMIN_BOOTSTRAP_EMAIL: 'founder@example.com',
+        };
+
+        return values[key];
+      }),
+    } as unknown as ConfigService;
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      bootstrapConfig,
+      mailService,
+      emailVerificationService,
+    );
+
+    await service.login({
+      email: 'founder@example.com',
+      password: 'StrongPassword123',
+    });
+
+    expect(userUpdate).not.toHaveBeenCalledWith({
+      where: { id: 'founder-id' },
+      data: { role: UserRole.ADMIN },
+      select: { id: true },
+    });
+  });
+
+  it('does not promote a non-matching email even when ADMIN_BOOTSTRAP_EMAIL is set', async () => {
+    const passwordHash = await argon2.hash('StrongPassword123', {
+      type: argon2.argon2id,
+    });
+    findUnique.mockResolvedValue({
+      id: 'user-id',
+      fullName: 'Haseeb',
+      email: 'haseeb@example.com',
+      passwordHash,
+      status: 'ACTIVE',
+      role: UserRole.USER,
+      deletedAt: null,
+    });
+    signAsync.mockResolvedValue('jwt-access-token');
+    refreshTokenCreate.mockResolvedValue({ id: 'refresh-token-id' });
+    userUpdate.mockResolvedValue({ id: 'user-id' });
+
+    const bootstrapConfig = {
+      ...config,
+      get: jest.fn((key: string) => {
+        const values: Record<string, string> = {
+          ADMIN_BOOTSTRAP_EMAIL: 'founder@example.com',
+        };
+
+        return values[key];
+      }),
+    } as unknown as ConfigService;
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      bootstrapConfig,
+      mailService,
+      emailVerificationService,
+    );
+
+    await service.login({
+      email: 'haseeb@example.com',
+      password: 'StrongPassword123',
+    });
+
+    expect(userUpdate).not.toHaveBeenCalledWith({
+      where: { id: 'user-id' },
+      data: { role: UserRole.ADMIN },
+      select: { id: true },
+    });
   });
 
   it('refreshes an access token with a valid opaque refresh token', async () => {
@@ -273,7 +524,13 @@ describe('AuthService', () => {
     });
     signAsync.mockResolvedValue('new-access-token');
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
     const response = await service.refreshAccessToken('opaque-refresh-token');
 
     expect(refreshTokenFindUnique).toHaveBeenCalledWith({
@@ -324,7 +581,13 @@ describe('AuthService', () => {
   it('rejects missing or unknown refresh tokens', async () => {
     refreshTokenFindUnique.mockResolvedValue(null);
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
 
     await expect(service.refreshAccessToken('')).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -344,7 +607,13 @@ describe('AuthService', () => {
       },
     });
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
 
     await expect(
       service.refreshAccessToken('revoked-refresh-token'),
@@ -364,7 +633,13 @@ describe('AuthService', () => {
       },
     });
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
 
     await expect(
       service.refreshAccessToken('expired-refresh-token'),
@@ -373,7 +648,13 @@ describe('AuthService', () => {
   });
 
   it('rejects refresh tokens for inactive or deleted users', async () => {
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
 
     refreshTokenFindUnique.mockResolvedValueOnce({
       expiresAt: new Date(Date.now() + 60_000),
@@ -416,7 +697,13 @@ describe('AuthService', () => {
       revokedAt: new Date(),
     });
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
     await expect(
       service.logout('opaque-refresh-token'),
     ).resolves.toBeUndefined();
@@ -444,7 +731,13 @@ describe('AuthService', () => {
       revokedAt: new Date(),
     });
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
     await expect(
       service.logout('revoked-refresh-token'),
     ).resolves.toBeUndefined();
@@ -455,7 +748,13 @@ describe('AuthService', () => {
   it('returns success for unknown refresh tokens during logout', async () => {
     refreshTokenFindUnique.mockResolvedValue(null);
 
-    const service = new AuthService(prisma, jwtService, config);
+    const service = new AuthService(
+      prisma,
+      jwtService,
+      config,
+      mailService,
+      emailVerificationService,
+    );
     const response = await service.logout('unknown-refresh-token');
 
     expect(response).toBeUndefined();
@@ -501,7 +800,13 @@ describe('AuthService', () => {
       });
       signAsync.mockResolvedValue('jwt-access-token');
 
-      const service = new AuthService(prisma, jwtService, config);
+      const service = new AuthService(
+        prisma,
+        jwtService,
+        config,
+        mailService,
+        emailVerificationService,
+      );
       const response = await service.loginWithGoogle({
         idToken: 'valid-id-token',
       });
@@ -549,7 +854,13 @@ describe('AuthService', () => {
       });
       signAsync.mockResolvedValue('jwt-access-token');
 
-      const service = new AuthService(prisma, jwtService, config);
+      const service = new AuthService(
+        prisma,
+        jwtService,
+        config,
+        mailService,
+        emailVerificationService,
+      );
       const response = await service.loginWithGoogle({
         idToken: 'valid-id-token',
       });
@@ -574,7 +885,13 @@ describe('AuthService', () => {
       }); // by googleId - already linked
       signAsync.mockResolvedValue('jwt-access-token');
 
-      const service = new AuthService(prisma, jwtService, config);
+      const service = new AuthService(
+        prisma,
+        jwtService,
+        config,
+        mailService,
+        emailVerificationService,
+      );
       const response = await service.loginWithGoogle({
         idToken: 'valid-id-token',
       });
@@ -596,7 +913,13 @@ describe('AuthService', () => {
     it('rejects an unverified Google email', async () => {
       mockGooglePayload({ email_verified: false });
 
-      const service = new AuthService(prisma, jwtService, config);
+      const service = new AuthService(
+        prisma,
+        jwtService,
+        config,
+        mailService,
+        emailVerificationService,
+      );
 
       await expect(
         service.loginWithGoogle({ idToken: 'valid-id-token' }),
@@ -609,7 +932,13 @@ describe('AuthService', () => {
         .spyOn(OAuth2Client.prototype, 'verifyIdToken')
         .mockRejectedValue(new Error('bad signature'));
 
-      const service = new AuthService(prisma, jwtService, config);
+      const service = new AuthService(
+        prisma,
+        jwtService,
+        config,
+        mailService,
+        emailVerificationService,
+      );
 
       await expect(
         service.loginWithGoogle({ idToken: 'garbage-token' }),
@@ -621,7 +950,13 @@ describe('AuthService', () => {
         ...config,
         get: jest.fn().mockReturnValue(undefined),
       } as unknown as ConfigService;
-      const service = new AuthService(prisma, jwtService, unconfigured);
+      const service = new AuthService(
+        prisma,
+        jwtService,
+        unconfigured,
+        mailService,
+        emailVerificationService,
+      );
 
       await expect(
         service.loginWithGoogle({ idToken: 'valid-id-token' }),

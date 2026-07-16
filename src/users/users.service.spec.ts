@@ -17,6 +17,10 @@ describe('UsersService', () => {
       updateMany,
     },
   } as unknown as PrismaService;
+  const sendMailFireAndForget = jest.fn();
+  const mailService = {
+    sendMailFireAndForget,
+  } as unknown as import('../mail/mail.service').MailService;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -41,7 +45,7 @@ describe('UsersService', () => {
       passwordHash: 'should-not-be-selected',
     });
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
     const response = await service.getCurrentUser('user-id');
 
     expect(findUnique).toHaveBeenCalledWith({
@@ -66,6 +70,7 @@ describe('UsersService', () => {
       phone: '+923001234567',
       status: UserStatus.ACTIVE,
       emailVerifiedAt: null,
+      emailVerified: false,
       lastActiveAt,
       createdAt,
       updatedAt,
@@ -73,10 +78,30 @@ describe('UsersService', () => {
     expect(response).not.toHaveProperty('passwordHash');
   });
 
+  it('computes emailVerified true when emailVerifiedAt is set', async () => {
+    findUnique.mockResolvedValue({
+      id: 'user-id',
+      email: 'haseeb@example.com',
+      fullName: 'Haseeb',
+      phone: null,
+      status: UserStatus.ACTIVE,
+      emailVerifiedAt: new Date('2026-07-10T00:00:00.000Z'),
+      lastActiveAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    });
+
+    const service = new UsersService(prisma, mailService);
+    const response = await service.getCurrentUser('user-id');
+
+    expect(response.emailVerified).toBe(true);
+  });
+
   it('rejects missing users', async () => {
     findUnique.mockResolvedValue(null);
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
 
     await expect(
       service.getCurrentUser('missing-user-id'),
@@ -90,7 +115,7 @@ describe('UsersService', () => {
       deletedAt: null,
     });
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
 
     await expect(service.getCurrentUser('user-id')).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -119,7 +144,7 @@ describe('UsersService', () => {
       passwordHash: 'should-not-be-selected',
     });
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
     const response = await service.updateProfile('user-id', {
       fullName: 'Haseeb Updated',
       phone: '+923001234567',
@@ -157,7 +182,7 @@ describe('UsersService', () => {
   });
 
   it('rejects empty profile update bodies', async () => {
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
 
     await expect(service.updateProfile('user-id', {})).rejects.toBeInstanceOf(
       BadRequestException,
@@ -173,7 +198,7 @@ describe('UsersService', () => {
       deletedAt: null,
     });
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
 
     await expect(
       service.updateProfile('user-id', { fullName: 'Haseeb Updated' }),
@@ -188,6 +213,8 @@ describe('UsersService', () => {
 
     findUnique.mockResolvedValue({
       id: 'user-id',
+      email: 'haseeb@example.com',
+      fullName: 'Haseeb',
       passwordHash: currentPasswordHash,
       status: UserStatus.ACTIVE,
       deletedAt: null,
@@ -195,13 +222,16 @@ describe('UsersService', () => {
     update.mockResolvedValue({ id: 'user-id' });
     updateMany.mockResolvedValue({ count: 2 });
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
     const response = await service.changePassword('user-id', {
       currentPassword: 'CurrentPassword123',
       newPassword: 'NewStrongPassword123',
     });
 
     expect(response).toBeNull();
+    expect(sendMailFireAndForget).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'haseeb@example.com' }),
+    );
     expect(update).toHaveBeenCalledWith({
       where: { id: 'user-id' },
       data: { passwordHash: expect.any(String) as string },
@@ -236,7 +266,7 @@ describe('UsersService', () => {
       deletedAt: null,
     });
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
 
     await expect(
       service.changePassword('user-id', {
@@ -258,7 +288,7 @@ describe('UsersService', () => {
       deletedAt: new Date(),
     });
 
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, mailService);
 
     await expect(
       service.changePassword('user-id', {

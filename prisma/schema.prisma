@@ -15,6 +15,14 @@ enum UserStatus {
   DELETED
 }
 
+// Admin Panel Foundation (Claude Code Prompt #4). ADMIN is granted either by
+// direct DB edit or via the ADMIN_BOOTSTRAP_EMAIL env var promotion in
+// AuthService (see login()/loginWithGoogle()) - no separate admin signup flow.
+enum UserRole {
+  USER
+  ADMIN
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -148,6 +156,7 @@ model User {
   fullName        String?
   phone           String?          @unique
   status          UserStatus       @default(ACTIVE)
+  role            UserRole         @default(USER)
   emailVerifiedAt DateTime?
   phoneVerifiedAt DateTime?
   lastActiveAt    DateTime?
@@ -169,6 +178,8 @@ model User {
   refreshTokens   RefreshToken[]
   subscription    Subscription?
   aiUsageEvents   AiUsageEvent[]
+  passwordResetOtps      PasswordResetOtp[]
+  emailVerificationOtps  EmailVerificationOtp[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -413,6 +424,47 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+// Password Reset OTP flow (email system task) - a 6-digit code, hashed
+// (never stored plain, same argon2 convention as User.passwordHash),
+// 10-minute expiry, 5-wrong-attempt lockout. One row per requested reset;
+// forgotPassword() rate-limits new rows to 3 per 15 minutes per user (see
+// PasswordResetService) rather than a DB constraint, since the count query
+// needs to also cover the "silently skip, still return generic success"
+// anti-enumeration behavior.
+model PasswordResetOtp {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  otpHash      String
+  expiresAt    DateTime
+  used         Boolean  @default(false)
+  attemptCount Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_otps")
+}
+
+// Email verification OTP flow - same shape/validation as PasswordResetOtp
+// but a separate table (a distinct purpose, not overloading one table with
+// a discriminator). Verification is tracked-only (User.emailVerifiedAt) and
+// never gates app usage - see AuthController.verifyEmail()/UsersService.
+model EmailVerificationOtp {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  otpHash      String
+  expiresAt    DateTime
+  used         Boolean  @default(false)
+  attemptCount Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_otps")
+}
+
 enum RagDocumentCategory {
   PAKISTANI_FOODS
   PLATEAU_HANDLING
@@ -580,6 +632,7 @@ model FoodItem {
   source                    FoodSource
   verified                  Boolean            @default(false)
   aliases                   FoodAlias[]
+  unknownFoodQueueItems     UnknownFoodQueueItem[]
   createdAt                 DateTime           @default(now())
   updatedAt                 DateTime           @updatedAt
 
@@ -613,11 +666,19 @@ model UnknownFoodQueueItem {
   lastSeenAt          DateTime                @default(now())
   suggestedCategory   FoodCategory?
   status              UnknownFoodQueueStatus  @default(PENDING)
+  // Set when approve() creates the real FoodItem (Admin Panel Unknown
+  // Foods status-aware actions task, 2026-07-16) - lets the Approved tab
+  // show/edit the actual nutrition values without a second lookup table.
+  // SetNull (not Cascade) so deleting a FoodItem never deletes queue
+  // review history.
+  linkedFoodItemId    String?
+  linkedFoodItem      FoodItem?               @relation(fields: [linkedFoodItemId], references: [id], onDelete: SetNull)
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
   @@index([status])
   @@index([frequency])
+  @@index([linkedFoodItemId])
   @@map("unknown_food_queue_items")
 }
 

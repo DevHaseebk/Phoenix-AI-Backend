@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common';
 import { Prisma, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { revokeAllRefreshTokens } from '../auth/session-revocation.util';
+import { MailService } from '../mail/mail.service';
+import { passwordChangedEmail } from '../mail/templates/password-changed.template';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -17,6 +20,7 @@ export interface CurrentUserProfile {
   phone: string | null;
   status: UserStatus;
   emailVerifiedAt: Date | null;
+  emailVerified: boolean;
   lastActiveAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -24,7 +28,10 @@ export interface CurrentUserProfile {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   async getCurrentUser(userId: string): Promise<CurrentUserProfile> {
     const user = await this.prisma.user.findUnique({
@@ -119,6 +126,8 @@ export class UsersService {
       where: { id: userId },
       select: {
         id: true,
+        email: true,
+        fullName: true,
         passwordHash: true,
         status: true,
         deletedAt: true,
@@ -146,25 +155,27 @@ export class UsersService {
     const passwordHash = await argon2.hash(changePasswordDto.newPassword, {
       type: argon2.argon2id,
     });
-    const revokedAt = new Date();
 
     await this.prisma.user.update({
       where: { id: userId },
       data: { passwordHash },
       select: { id: true },
     });
-    await this.prisma.refreshToken.updateMany({
-      where: {
-        userId,
-        revokedAt: null,
-      },
-      data: { revokedAt },
-    });
+    await revokeAllRefreshTokens(this.prisma, userId);
+
+    if (user.email) {
+      this.mailService.sendMailFireAndForget({
+        to: user.email,
+        ...passwordChangedEmail({ name: user.fullName }),
+      });
+    }
 
     return null;
   }
 
-  private toCurrentUserProfile(user: CurrentUserProfile): CurrentUserProfile {
+  private toCurrentUserProfile(
+    user: Omit<CurrentUserProfile, 'emailVerified'>,
+  ): CurrentUserProfile {
     return {
       id: user.id,
       email: user.email,
@@ -172,6 +183,7 @@ export class UsersService {
       phone: user.phone,
       status: user.status,
       emailVerifiedAt: user.emailVerifiedAt,
+      emailVerified: user.emailVerifiedAt !== null,
       lastActiveAt: user.lastActiveAt,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,

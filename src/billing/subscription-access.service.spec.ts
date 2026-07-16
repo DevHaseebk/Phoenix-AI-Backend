@@ -6,6 +6,7 @@ import { trialDailyAiActionLimit } from './subscription-access.constants';
 describe('SubscriptionAccessService', () => {
   const subscriptionFindUnique = jest.fn();
   const subscriptionUpdate = jest.fn();
+  const subscriptionUpsert = jest.fn();
   const aiUsageEventCount = jest.fn();
   const aiUsageEventCreate = jest.fn();
   const userProfileFindUnique = jest.fn();
@@ -13,6 +14,7 @@ describe('SubscriptionAccessService', () => {
     subscription: {
       findUnique: subscriptionFindUnique,
       update: subscriptionUpdate,
+      upsert: subscriptionUpsert,
     },
     aiUsageEvent: { count: aiUsageEventCount, create: aiUsageEventCreate },
     userProfile: { findUnique: userProfileFindUnique },
@@ -226,13 +228,7 @@ describe('SubscriptionAccessService', () => {
   });
 
   describe('syncFromStripeEvent', () => {
-    it('matches by userId when provided (checkout.session.completed)', async () => {
-      subscriptionFindUnique.mockResolvedValue({
-        id: 'sub-row-1',
-        stripeCustomerId: null,
-        stripeSubscriptionId: null,
-        currentPeriodEnd: null,
-      });
+    it('upserts by userId when provided (checkout.session.completed)', async () => {
       const service = createService();
 
       await service.syncFromStripeEvent({
@@ -240,24 +236,61 @@ describe('SubscriptionAccessService', () => {
         stripeCustomerId: 'cus_123',
         stripeSubscriptionId: 'sub_123',
         status: SubscriptionStatus.ACTIVE,
+        currentPeriodEnd: new Date('2026-08-01T00:00:00.000Z'),
       });
 
-      expect(subscriptionFindUnique).toHaveBeenCalledWith({
+      expect(subscriptionUpsert).toHaveBeenCalledWith({
         where: { userId: 'user-1' },
-      });
-      expect(subscriptionUpdate).toHaveBeenCalledWith({
-        where: { id: 'sub-row-1' },
-        data: {
+        create: {
+          userId: 'user-1',
           status: SubscriptionStatus.ACTIVE,
           stripeCustomerId: 'cus_123',
           stripeSubscriptionId: 'sub_123',
-          currentPeriodEnd: null,
+          currentPeriodEnd: new Date('2026-08-01T00:00:00.000Z'),
+        },
+        update: {
+          status: SubscriptionStatus.ACTIVE,
+          stripeCustomerId: 'cus_123',
+          stripeSubscriptionId: 'sub_123',
+          currentPeriodEnd: new Date('2026-08-01T00:00:00.000Z'),
         },
         select: { id: true },
       });
+      // The userId path must never fall back to the find-then-update branch -
+      // that was exactly the bug (a missing row silently no-oped).
+      expect(subscriptionUpdate).not.toHaveBeenCalled();
     });
 
-    it('does nothing when no local subscription row matches', async () => {
+    it('REGRESSION: activates a paid user who has NO existing Subscription row (pre-billing account)', async () => {
+      // The real production incident: a founder account created before the
+      // billing feature shipped had no Subscription row, so a delivered, paid
+      // checkout.session.completed webhook returned 200 but left the user
+      // LOCKED. The upsert must CREATE the row here, not no-op.
+      subscriptionUpsert.mockResolvedValue({ id: 'newly-created-row' });
+      const service = createService();
+
+      await service.syncFromStripeEvent({
+        userId: 'legacy-user',
+        stripeCustomerId: 'cus_legacy',
+        stripeSubscriptionId: 'sub_legacy',
+        status: SubscriptionStatus.ACTIVE,
+      });
+
+      expect(subscriptionUpsert).toHaveBeenCalledTimes(1);
+      const [[call]] = subscriptionUpsert.mock.calls as [
+        [
+          {
+            where: { userId: string };
+            create: { userId: string; status: SubscriptionStatus };
+          },
+        ],
+      ];
+      expect(call.where).toEqual({ userId: 'legacy-user' });
+      expect(call.create.userId).toBe('legacy-user');
+      expect(call.create.status).toBe(SubscriptionStatus.ACTIVE);
+    });
+
+    it('does nothing when a customer-keyed event (no userId) matches no local row', async () => {
       subscriptionFindUnique.mockResolvedValue(null);
       const service = createService();
 
@@ -266,7 +299,38 @@ describe('SubscriptionAccessService', () => {
         status: SubscriptionStatus.ACTIVE,
       });
 
+      expect(subscriptionUpsert).not.toHaveBeenCalled();
       expect(subscriptionUpdate).not.toHaveBeenCalled();
+    });
+
+    it('updates the matched row for a subscription-keyed event (customer.subscription.updated)', async () => {
+      subscriptionFindUnique.mockResolvedValue({
+        id: 'sub-row-9',
+        stripeCustomerId: 'cus_9',
+        stripeSubscriptionId: 'sub_9',
+        currentPeriodEnd: null,
+      });
+      const service = createService();
+
+      await service.syncFromStripeEvent({
+        stripeSubscriptionId: 'sub_9',
+        status: SubscriptionStatus.CANCELED,
+      });
+
+      expect(subscriptionFindUnique).toHaveBeenCalledWith({
+        where: { stripeSubscriptionId: 'sub_9' },
+      });
+      expect(subscriptionUpsert).not.toHaveBeenCalled();
+      expect(subscriptionUpdate).toHaveBeenCalledWith({
+        where: { id: 'sub-row-9' },
+        data: {
+          status: SubscriptionStatus.CANCELED,
+          stripeCustomerId: 'cus_9',
+          stripeSubscriptionId: 'sub_9',
+          currentPeriodEnd: null,
+        },
+        select: { id: true },
+      });
     });
   });
 });

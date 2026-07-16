@@ -2,21 +2,32 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, UserStatus } from '@prisma/client';
+import { Prisma, UserRole, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import type { StringValue } from 'ms';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionAccessService } from '../billing/subscription-access.service';
+import { MailService } from '../mail/mail.service';
+import { newLoginEmail } from '../mail/templates/new-login.template';
+import { welcomeEmail } from '../mail/templates/welcome.template';
+import { EmailVerificationService } from './email-verification.service';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { LoginDeviceDto, LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { hashRefreshToken } from './refresh-token-hash.util';
+
+/** New-login alerts are skipped for this exact (userId, deviceName, deviceType)
+ * combo if it logged in within this window - avoids alert fatigue on normal
+ * repeat logins from the same known browser/app, while still catching a
+ * genuinely new device. */
+const RECENT_SAME_DEVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface SignupUserResponse {
   id: string;
@@ -47,6 +58,7 @@ type TokenDuration = StringValue;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly dummyPasswordHashPromise = argon2.hash(
     'project-phoenix-dummy-password',
     { type: argon2.argon2id },
@@ -61,6 +73,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly mailService: MailService,
+    private readonly emailVerificationService: EmailVerificationService,
   ) {}
 
   async signup(signupDto: SignupDto): Promise<{ user: SignupUserResponse }> {
@@ -102,6 +116,29 @@ export class AuthService {
         },
       });
 
+      this.mailService.sendMailFireAndForget({
+        to: email,
+        ...welcomeEmail({ name: user.fullName }),
+      });
+
+      if (user.email) {
+        // Never lets a verification-email failure fail signup itself -
+        // verification is tracked-only and explicitly non-blocking.
+        this.emailVerificationService
+          .sendVerificationEmail({
+            id: user.id,
+            email: user.email,
+            fullName: user.fullName,
+          })
+          .catch((error: unknown) => {
+            this.logger.error(
+              `Failed to send verification email to ${user.email}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
+      }
+
       return { user };
     } catch (error) {
       if (
@@ -128,6 +165,7 @@ export class AuthService {
         email: true,
         passwordHash: true,
         status: true,
+        role: true,
         deletedAt: true,
       },
     });
@@ -153,6 +191,8 @@ export class AuthService {
     if (!passwordMatches) {
       throw this.invalidCredentials();
     }
+
+    await this.promoteToBootstrapAdminIfMatched(user);
 
     return this.issueSession(user, metadata, loginDto.device);
   }
@@ -198,6 +238,7 @@ export class AuthService {
       fullName: true,
       email: true,
       status: true,
+      role: true,
       deletedAt: true,
     } as const;
 
@@ -205,6 +246,7 @@ export class AuthService {
       where: { googleId },
       select: userSelect,
     });
+    let isNewUser = false;
 
     if (!user) {
       const existingByEmail = await this.prisma.user.findUnique({
@@ -212,29 +254,41 @@ export class AuthService {
         select: userSelect,
       });
 
-      user = existingByEmail
-        ? await this.prisma.user.update({
-            where: { id: existingByEmail.id },
-            data: { googleId },
-            select: userSelect,
-          })
-        : await this.prisma.user.create({
-            data: {
-              email,
-              fullName: payload.name?.trim() || null,
-              googleId,
-              emailVerifiedAt: new Date(),
-              subscription: {
-                create: SubscriptionAccessService.trialSubscriptionCreateData(),
-              },
+      if (existingByEmail) {
+        user = await this.prisma.user.update({
+          where: { id: existingByEmail.id },
+          data: { googleId },
+          select: userSelect,
+        });
+      } else {
+        user = await this.prisma.user.create({
+          data: {
+            email,
+            fullName: payload.name?.trim() || null,
+            googleId,
+            emailVerifiedAt: new Date(),
+            subscription: {
+              create: SubscriptionAccessService.trialSubscriptionCreateData(),
             },
-            select: userSelect,
-          });
+          },
+          select: userSelect,
+        });
+        isNewUser = true;
+      }
+    }
+
+    if (isNewUser && user.email) {
+      this.mailService.sendMailFireAndForget({
+        to: user.email,
+        ...welcomeEmail({ name: user.fullName }),
+      });
     }
 
     if (user.status !== UserStatus.ACTIVE || user.deletedAt !== null) {
       throw this.invalidCredentials();
     }
+
+    await this.promoteToBootstrapAdminIfMatched(user);
 
     return this.issueSession(user, metadata, googleAuthDto.device);
   }
@@ -334,6 +388,22 @@ export class AuthService {
         ),
     );
 
+    // Checked before creating this session's own row, else it would always
+    // match itself. Skips the new-login alert only when this exact device
+    // combo was already seen recently - a genuinely new device still alerts.
+    const recentSameDevice = await this.prisma.refreshToken.findFirst({
+      where: {
+        userId: user.id,
+        deviceName: device?.deviceName ?? null,
+        deviceType: device?.deviceType ?? null,
+        revokedAt: null,
+        createdAt: {
+          gt: new Date(Date.now() - RECENT_SAME_DEVICE_WINDOW_MS),
+        },
+      },
+      select: { id: true },
+    });
+
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
@@ -351,6 +421,19 @@ export class AuthService {
       select: { id: true },
     });
 
+    if (!recentSameDevice && user.email) {
+      this.mailService.sendMailFireAndForget({
+        to: user.email,
+        ...newLoginEmail({
+          name: user.fullName,
+          deviceName: device?.deviceName ?? null,
+          deviceType: device?.deviceType ?? null,
+          approximateTime: new Date().toUTCString(),
+          ipAddress: metadata.ipAddress ?? null,
+        }),
+      });
+    }
+
     return {
       user: {
         id: user.id,
@@ -363,6 +446,42 @@ export class AuthService {
         refreshToken,
       },
     };
+  }
+
+  /**
+   * Admin Panel Foundation bootstrap (Claude Code Prompt #4). Promotes the
+   * ADMIN_BOOTSTRAP_EMAIL account to role: ADMIN the first time it logs in
+   * (email/password or Google), so the founder never has to hand-edit the
+   * DB to create the first admin. No-ops when the env var is unset, the
+   * logging-in email doesn't match, or the user is already ADMIN. Mutates
+   * the passed-in `user.role` in place so the caller's subsequent
+   * issueSession() call reflects the promotion immediately.
+   */
+  private async promoteToBootstrapAdminIfMatched(user: {
+    id: string;
+    email: string | null;
+    role: UserRole;
+  }): Promise<void> {
+    const bootstrapEmail = this.config
+      .get<string>('ADMIN_BOOTSTRAP_EMAIL')
+      ?.trim()
+      .toLowerCase();
+
+    if (
+      !bootstrapEmail ||
+      !user.email ||
+      user.email.toLowerCase() !== bootstrapEmail ||
+      user.role === UserRole.ADMIN
+    ) {
+      return;
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { role: UserRole.ADMIN },
+      select: { id: true },
+    });
+    user.role = UserRole.ADMIN;
   }
 
   private async verifyGoogleIdToken(

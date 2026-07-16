@@ -10,15 +10,24 @@ import { ApiCreatedResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { successResponse } from '../common/responses/response.helper';
 import { AuthService } from './auth.service';
+import { EmailVerificationService } from './email-verification.service';
+import { PasswordResetService } from './password-reset.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SignupDto } from './dto/signup.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordResetService: PasswordResetService,
+    private readonly emailVerificationService: EmailVerificationService,
+  ) {}
 
   @Post('signup')
   @ApiCreatedResponse({ description: 'Account created successfully' })
@@ -70,5 +79,47 @@ export class AuthController {
     await this.authService.logout(refreshTokenDto.refreshToken);
 
     return successResponse(null, 'Logged out successfully', {});
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({
+    description: 'If that account exists, a reset code has been sent',
+  })
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    await this.passwordResetService.forgotPassword(forgotPasswordDto.email);
+
+    // Always the same message regardless of whether the account exists,
+    // has a password, or is rate-limited - never an enumeration oracle.
+    return successResponse(
+      null,
+      'If an account with that email exists, a password reset code has been sent.',
+      {},
+    );
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ description: 'Password reset successfully' })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    await this.passwordResetService.resetPassword(
+      resetPasswordDto.email,
+      resetPasswordDto.otp,
+      resetPasswordDto.newPassword,
+    );
+
+    return successResponse(null, 'Password reset successfully', {});
+  }
+
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ description: 'Email verified successfully' })
+  async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
+    await this.emailVerificationService.verifyEmail(
+      verifyEmailDto.email,
+      verifyEmailDto.otp,
+    );
+
+    return successResponse(null, 'Email verified successfully', {});
   }
 }

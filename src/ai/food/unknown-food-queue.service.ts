@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   FoodDataConfidence,
+  FoodItem,
   Prisma,
   UnknownFoodQueueStatus,
 } from '@prisma/client';
@@ -16,9 +17,13 @@ export interface UnknownFoodQueueItemResponse {
   lastSeenAt: Date;
   suggestedCategory: string | null;
   status: UnknownFoodQueueStatus;
+  linkedFoodItemId: string | null;
+  linkedFoodItem: FoodItem | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+const includeLinkedFoodItem = { linkedFoodItem: true } as const;
 
 @Injectable()
 export class UnknownFoodQueueService {
@@ -65,14 +70,19 @@ export class UnknownFoodQueueService {
     const items = await this.prisma.unknownFoodQueueItem.findMany({
       where: status ? { status } : undefined,
       orderBy: [{ frequency: 'desc' }, { lastSeenAt: 'desc' }],
+      include: includeLinkedFoodItem,
     });
 
     return items;
   }
 
+  /** `linkedFoodItemId` is only ever passed when transitioning to APPROVED
+   * (see UnknownFoodsController.approve()) - omitted for every other
+   * transition, so REJECTED/NEEDS_RESEARCH/PENDING never touch the column. */
   async setStatus(
     id: string,
     status: UnknownFoodQueueStatus,
+    linkedFoodItemId?: string,
   ): Promise<UnknownFoodQueueItemResponse | null> {
     const existing = await this.prisma.unknownFoodQueueItem.findUnique({
       where: { id },
@@ -84,12 +94,19 @@ export class UnknownFoodQueueService {
 
     return this.prisma.unknownFoodQueueItem.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...(linkedFoodItemId === undefined ? {} : { linkedFoodItemId }),
+      },
+      include: includeLinkedFoodItem,
     });
   }
 
   async findById(id: string): Promise<UnknownFoodQueueItemResponse | null> {
-    return this.prisma.unknownFoodQueueItem.findUnique({ where: { id } });
+    return this.prisma.unknownFoodQueueItem.findUnique({
+      where: { id },
+      include: includeLinkedFoodItem,
+    });
   }
 }
 

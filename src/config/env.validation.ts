@@ -35,6 +35,10 @@ const optionalEnvKeys = [
   'STRIPE_WEBHOOK_SECRET',
   'STRIPE_PRICE_ID',
   'FRONTEND_URL',
+  'ADMIN_BOOTSTRAP_EMAIL',
+  'EMAIL_ENABLED',
+  'GMAIL_USER',
+  'GMAIL_APP_PASSWORD',
 ] as const;
 
 type RequiredEnvKey = (typeof requiredEnvKeys)[number];
@@ -105,11 +109,30 @@ export function validateEnvironment(
     );
   }
 
+  const emailEnabled = getStringValue(config, 'EMAIL_ENABLED') ?? 'true';
+
+  if (!['true', 'false'].includes(emailEnabled)) {
+    throw new Error('EMAIL_ENABLED must be either true or false');
+  }
+
   const geminiApiKey = getStringValue(config, 'GEMINI_API_KEY');
 
   if (nodeEnv === 'production' && aiEnabled === 'true' && !geminiApiKey) {
     throw new Error(
       'GEMINI_API_KEY is required in production when AI_ENABLED=true',
+    );
+  }
+
+  const gmailUser = getStringValue(config, 'GMAIL_USER');
+  const gmailAppPassword = getStringValue(config, 'GMAIL_APP_PASSWORD');
+
+  if (
+    nodeEnv === 'production' &&
+    emailEnabled === 'true' &&
+    (!gmailUser || !gmailAppPassword)
+  ) {
+    throw new Error(
+      'GMAIL_USER and GMAIL_APP_PASSWORD are required in production when EMAIL_ENABLED=true',
     );
   }
 
@@ -141,5 +164,6 @@ export function validateEnvironment(
     AI_PROVIDER: aiProvider,
     AI_ENABLED: aiEnabled,
     AI_TIMEOUT_MS: String(aiTimeoutMs),
+    EMAIL_ENABLED: emailEnabled,
   };
 }

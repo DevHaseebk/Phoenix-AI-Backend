@@ -144,6 +144,24 @@ async function apiPost(
   return { status: response.status, body: parsed };
 }
 
+/** Upserts (not just updates) the Subscription row so this works even if
+ * signup's own nested trial-row creation ever changes - accessOverride:
+ * true yields FULL_UNLIMITED regardless of status (see
+ * SubscriptionAccessService.getAccessLevel()), so status/trialEndsAt are
+ * left as whatever signup already set. */
+async function grantUnlimitedAccess(userId: string): Promise<void> {
+  const prisma = new PrismaClient();
+  try {
+    await prisma.subscription.upsert({
+      where: { userId },
+      update: { accessOverride: true },
+      create: { userId, accessOverride: true },
+    });
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 async function createThrowawayTestUser(): Promise<{
   userId: string;
   accessToken: string;
@@ -172,6 +190,17 @@ async function createThrowawayTestUser(): Promise<{
   const loginData = (login.body as { data: { user: { id: string }; tokens: { accessToken: string } } }).data;
   const accessToken = loginData.tokens.accessToken;
   const userId = loginData.user.id;
+
+  // Bypass the Subscription/Trial system's 3-real-AI-action/day cap for
+  // this throwaway account, before any AI call is made - the 2026-07-15
+  // billing system otherwise silently swaps tests #4+ for a templated
+  // TRIAL_LIMIT_REACHED reply instead of real model output (confirmed live
+  // 2026-07-16, see docs/15_AI_Golden_Test_Set.md's Notes section). A
+  // direct Prisma write is appropriate here - this is test-harness setup
+  // for a throwaway account, not a real admin action, so it doesn't need
+  // to go through the admin API. The 3/day cap itself is correct, intended
+  // behavior for real users and is NOT touched.
+  await grantUnlimitedAccess(userId);
 
   const onboarding = await apiPost('/onboarding/complete', TEST_PROFILE, accessToken);
 

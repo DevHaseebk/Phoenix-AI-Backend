@@ -200,9 +200,50 @@ export class SubscriptionAccessService {
    * verification (billing.service.ts) - this method itself never touches
    * the Stripe SDK, only plain already-verified values. */
   async syncFromStripeEvent(sync: StripeSubscriptionSync): Promise<void> {
-    const where: Prisma.SubscriptionWhereUniqueInput | null = sync.userId
-      ? { userId: sync.userId }
-      : sync.stripeSubscriptionId
+    // `checkout.session.completed` is the authoritative "this user just paid"
+    // signal, and the ONLY Stripe event that carries OUR userId (as the
+    // checkout session's client_reference_id). Upsert by userId so a paying
+    // user who has no Subscription row yet is still activated.
+    //
+    // This is the exact bug fixed here (2026-07-15): the previous code did a
+    // find-then-update and silently no-oped when no row existed, so any
+    // account created BEFORE the billing feature shipped (auto-trial-row
+    // creation didn't exist until 2026-07-15) had no Subscription row, and a
+    // real, delivered, *paid* webhook returned 200 OK while leaving the user
+    // LOCKED. Upsert (create-or-update) closes that hole for every such user,
+    // not just the one who hit it.
+    if (sync.userId) {
+      await this.prisma.subscription.upsert({
+        where: { userId: sync.userId },
+        create: {
+          userId: sync.userId,
+          status: sync.status,
+          stripeCustomerId: sync.stripeCustomerId ?? null,
+          stripeSubscriptionId: sync.stripeSubscriptionId ?? null,
+          currentPeriodEnd: sync.currentPeriodEnd ?? null,
+        },
+        update: {
+          status: sync.status,
+          // `undefined` = leave column unchanged (preserves whatever a prior
+          // event stored); a real incoming value overwrites it.
+          stripeCustomerId: sync.stripeCustomerId ?? undefined,
+          stripeSubscriptionId: sync.stripeSubscriptionId ?? undefined,
+          currentPeriodEnd: sync.currentPeriodEnd ?? undefined,
+        },
+        select: { id: true },
+      });
+
+      return;
+    }
+
+    // Subscription-lifecycle events (customer.subscription.*, invoice.*) do
+    // NOT carry our userId - they can only be matched to the row Stripe was
+    // already linked to at checkout time. With no userId there is no safe way
+    // to know which user a brand-new row belongs to, so a genuine miss is
+    // logged and skipped (the checkout.session.completed event is what creates
+    // the row in the first place).
+    const where: Prisma.SubscriptionWhereUniqueInput | null =
+      sync.stripeSubscriptionId
         ? { stripeSubscriptionId: sync.stripeSubscriptionId }
         : sync.stripeCustomerId
           ? { stripeCustomerId: sync.stripeCustomerId }

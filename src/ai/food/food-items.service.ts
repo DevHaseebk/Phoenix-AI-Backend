@@ -1,7 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { FoodCategory, FoodDataConfidence, FoodSource } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  FoodCategory,
+  FoodDataConfidence,
+  FoodSource,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizeFoodText } from './utils/food-normalize.util';
+
+export interface UpdateFoodItemNutritionInput {
+  caloriesPer100g?: number;
+  proteinPer100g?: number;
+  carbsPer100g?: number;
+  fatPer100g?: number;
+  defaultServingGrams?: number;
+}
 
 export interface CreateFoodItemInput {
   name: string;
@@ -62,5 +75,47 @@ export class FoodItemsService {
       },
       include: { aliases: true },
     });
+  }
+
+  /** Nutrition-only edit for an already-approved FoodItem (Unknown Foods
+   * "Edit" action, Approved tab) - never touches name/category/aliases, so
+   * food-matching.service.ts's alias lookups are unaffected by a correction
+   * here. Only the fields actually present in `patch` are updated. */
+  async update(
+    id: string,
+    patch: UpdateFoodItemNutritionInput,
+  ): Promise<Prisma.FoodItemGetPayload<{ include: { aliases: true } }>> {
+    try {
+      return await this.prisma.foodItem.update({
+        where: { id },
+        data: {
+          ...(patch.caloriesPer100g === undefined
+            ? {}
+            : { caloriesPer100g: patch.caloriesPer100g }),
+          ...(patch.proteinPer100g === undefined
+            ? {}
+            : { proteinPer100g: patch.proteinPer100g }),
+          ...(patch.carbsPer100g === undefined
+            ? {}
+            : { carbsPer100g: patch.carbsPer100g }),
+          ...(patch.fatPer100g === undefined
+            ? {}
+            : { fatPer100g: patch.fatPer100g }),
+          ...(patch.defaultServingGrams === undefined
+            ? {}
+            : { defaultServingGrams: patch.defaultServingGrams }),
+        },
+        include: { aliases: true },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('Food item not found');
+      }
+
+      throw error;
+    }
   }
 }

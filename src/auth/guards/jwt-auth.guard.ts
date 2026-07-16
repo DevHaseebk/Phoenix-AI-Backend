@@ -38,7 +38,9 @@ export class JwtAuthGuard implements CanActivate {
       select: {
         id: true,
         email: true,
+        fullName: true,
         status: true,
+        role: true,
         deletedAt: true,
       },
     });
@@ -56,7 +58,9 @@ export class JwtAuthGuard implements CanActivate {
     request.user = {
       userId: user.id,
       email: user.email,
+      fullName: user.fullName,
       status: user.status,
+      role: user.role,
     };
 
     return true;
@@ -86,7 +90,9 @@ export class JwtAuthGuard implements CanActivate {
     }
   }
 
-  private mapPayload(payload: AccessTokenPayload): AuthenticatedUser {
+  private mapPayload(
+    payload: AccessTokenPayload,
+  ): Pick<AuthenticatedUser, 'userId' | 'email' | 'status'> {
     if (
       typeof payload.sub !== 'string' ||
       typeof payload.email !== 'string' ||

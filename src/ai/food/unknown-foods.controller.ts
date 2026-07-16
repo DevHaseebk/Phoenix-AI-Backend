@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -10,24 +11,22 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { UnknownFoodQueueStatus } from '@prisma/client';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../../auth/guards/admin.guard';
 import { successResponse } from '../../common/responses/response.helper';
 import { ApproveUnknownFoodDto } from './dto/approve-unknown-food.dto';
+import { EditFoodItemDto } from './dto/edit-food-item.dto';
 import { ListUnknownFoodsQueryDto } from './dto/list-unknown-foods-query.dto';
 import { FoodItemsService } from './food-items.service';
 import { UnknownFoodQueueService } from './unknown-food-queue.service';
 
-// NOTE (security gap, documented per task instructions): these endpoints are
-// founder/operator-facing (Unknown Food Queue review), not user-facing, but
-// this project has no admin-role/permission system yet (admin/ is an
-// unimplemented skeleton). They are gated behind plain JwtAuthGuard only, so
-// any authenticated user can technically reach them via a direct API call.
-// This is an accepted, known-for-now gap - flagged here for a real fix once
-// proper admin auth exists. Do not build role-based access control in this
-// task; that is explicitly out of scope.
-@ApiTags('Internal - Unknown Food Queue')
+// Founder/operator-facing (Unknown Food Queue review). Previously gated by
+// plain JwtAuthGuard only (an accepted, documented gap) - re-secured behind
+// AdminGuard (Admin Panel Prompt #5, 2026-07-16) now that real admin auth
+// exists. The review UI itself moved from frontend/app/internal/unknown-foods
+// into admin/ in the same task; see docs/16_Claude_Code_Handover.md §6.
+@ApiTags('Admin - Unknown Food Queue')
 @Controller('internal/unknown-foods')
-@UseGuards(JwtAuthGuard)
+@UseGuards(AdminGuard)
 @ApiBearerAuth()
 export class UnknownFoodsController {
   constructor(
@@ -70,6 +69,7 @@ export class UnknownFoodsController {
     const updatedQueueItem = await this.unknownFoodQueueService.setStatus(
       id,
       UnknownFoodQueueStatus.APPROVED,
+      foodItem.id,
     );
 
     return successResponse(
@@ -111,5 +111,78 @@ export class UnknownFoodsController {
       'Queue item marked as needing research',
       {},
     );
+  }
+
+  /**
+   * Edits the nutrition values of the FoodItem an APPROVED queue item is
+   * linked to - never re-runs approval, never touches the queue item's own
+   * fields beyond what setStatus() already covers elsewhere. Only callable
+   * once a linkedFoodItemId actually exists (i.e. after a real approve()),
+   * so this can't be used to sneak a food item into existence some other way.
+   */
+  @Patch(':id/edit-food-item')
+  @ApiOkResponse({ description: 'Food item updated successfully' })
+  async editFoodItem(@Param('id') id: string, @Body() dto: EditFoodItemDto) {
+    if (
+      dto.caloriesPer100g === undefined &&
+      dto.proteinPer100g === undefined &&
+      dto.carbsPer100g === undefined &&
+      dto.fatPer100g === undefined &&
+      dto.defaultServingGrams === undefined
+    ) {
+      throw new BadRequestException('At least one field is required');
+    }
+
+    const queueItem = await this.unknownFoodQueueService.findById(id);
+
+    if (!queueItem) {
+      throw new NotFoundException('Unknown food queue item not found');
+    }
+
+    if (
+      queueItem.status !== UnknownFoodQueueStatus.APPROVED ||
+      !queueItem.linkedFoodItemId
+    ) {
+      throw new BadRequestException(
+        'Only an approved queue item with a linked food item can be edited',
+      );
+    }
+
+    const foodItem = await this.foodItemsService.update(
+      queueItem.linkedFoodItemId,
+      dto,
+    );
+
+    return successResponse(foodItem, 'Food item updated successfully', {});
+  }
+
+  /**
+   * Undoes a REJECTED or NEEDS_RESEARCH classification, moving the item back
+   * to PENDING. Deliberately refuses on an APPROVED item - a real FoodItem
+   * already exists by then, and "restoring" it to pending would desync the
+   * queue item's status from that fact; edit-food-item is the correct action
+   * once approved.
+   */
+  @Patch(':id/restore-to-pending')
+  @ApiOkResponse({ description: 'Queue item restored to pending' })
+  async restoreToPending(@Param('id') id: string) {
+    const queueItem = await this.unknownFoodQueueService.findById(id);
+
+    if (!queueItem) {
+      throw new NotFoundException('Unknown food queue item not found');
+    }
+
+    if (queueItem.status === UnknownFoodQueueStatus.APPROVED) {
+      throw new BadRequestException(
+        'An approved item cannot be restored to pending - edit its linked food item instead',
+      );
+    }
+
+    const updated = await this.unknownFoodQueueService.setStatus(
+      id,
+      UnknownFoodQueueStatus.PENDING,
+    );
+
+    return successResponse(updated, 'Queue item restored to pending', {});
   }
 }
