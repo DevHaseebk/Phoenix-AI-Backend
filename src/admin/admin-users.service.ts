@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, SubscriptionStatus, UserRole } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListAdminUsersQueryDto } from './dto/list-admin-users-query.dto';
 
@@ -23,7 +24,10 @@ export interface AdminUserAccessOverrideResult {
 
 @Injectable()
 export class AdminUsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   async list(query: ListAdminUsersQueryDto): Promise<{
     items: AdminUserListItem[];
@@ -102,6 +106,7 @@ export class AdminUsersService {
   async setAccessOverride(
     userId: string,
     accessOverride: boolean,
+    adminUserId: string,
   ): Promise<AdminUserAccessOverrideResult> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -112,7 +117,12 @@ export class AdminUsersService {
       throw new NotFoundException('User not found');
     }
 
-    return this.prisma.subscription.upsert({
+    const before = await this.prisma.subscription.findUnique({
+      where: { userId },
+      select: { accessOverride: true },
+    });
+
+    const result = await this.prisma.subscription.upsert({
       where: { userId },
       update: { accessOverride },
       create: {
@@ -127,5 +137,18 @@ export class AdminUsersService {
         trialEndsAt: true,
       },
     });
+
+    await this.auditLog.record({
+      adminUserId,
+      action: 'user.access-override.update',
+      targetType: 'User',
+      targetId: userId,
+      metadata: {
+        before: before?.accessOverride ?? false,
+        after: result.accessOverride,
+      },
+    });
+
+    return result;
   }
 }

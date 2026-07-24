@@ -4,9 +4,11 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { ApiErrorResponse } from '../responses/api-response.interface';
+import { recentErrorTracker } from '../utils/recent-error-tracker';
 
 interface HttpExceptionBody {
   message?: string | string[];
@@ -53,9 +55,12 @@ function normalizeDetails(response: string | object): unknown[] {
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(GlobalExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const context = host.switchToHttp();
     const response = context.getResponse<Response>();
+    const request = context.getRequest<Request>();
 
     const isHttpException = exception instanceof HttpException;
     const status = Number(
@@ -67,6 +72,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       ? exception.getResponse()
       : 'Internal server error';
     const details = normalizeDetails(exceptionResponse);
+
+    // Always log the real underlying error server-side, even though the
+    // client only ever gets the generic message/code below - otherwise a
+    // real bug (bad credentials, a DB error, an unhandled edge case) is
+    // completely invisible from the server's own console.
+    const logMessage = `${request.method} ${request.url} -> ${status}`;
+    if (status >= 500 || !isHttpException) {
+      recentErrorTracker.record();
+      this.logger.error(
+        logMessage,
+        exception instanceof Error ? exception.stack : String(exception),
+      );
+    } else {
+      this.logger.warn(
+        `${logMessage}: ${exception instanceof Error ? exception.message : String(exception)}`,
+      );
+    }
 
     const body: ApiErrorResponse = {
       success: false,

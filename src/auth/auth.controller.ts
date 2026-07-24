@@ -19,6 +19,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SignupDto } from './dto/signup.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -84,18 +85,37 @@ export class AuthController {
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOkResponse({
-    description: 'If that account exists, a reset code has been sent',
+    description:
+      'If that account exists, a reset code has been sent (or the account is on cooldown - see retryAfterSeconds)',
   })
   async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
-    await this.passwordResetService.forgotPassword(forgotPasswordDto.email);
+    const result = await this.passwordResetService.forgotPassword(
+      forgotPasswordDto.email,
+    );
 
-    // Always the same message regardless of whether the account exists,
-    // has a password, or is rate-limited - never an enumeration oracle.
+    // The message text stays generic (never an enumeration oracle for an
+    // unknown email), but `sent`/`retryAfterSeconds` in the data payload are
+    // real and account for a known account's own resend cooldown - see
+    // PasswordResetService.forgotPassword()'s doc comment.
     return successResponse(
-      null,
-      'If an account with that email exists, a password reset code has been sent.',
+      result,
+      result.sent
+        ? 'If an account with that email exists, a password reset code has been sent.'
+        : 'Please wait before requesting another code.',
       {},
     );
+  }
+
+  @Post('verify-reset-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ description: 'Code verified, reset token issued' })
+  async verifyResetOtp(@Body() verifyResetOtpDto: VerifyResetOtpDto) {
+    const result = await this.passwordResetService.verifyResetOtp(
+      verifyResetOtpDto.email,
+      verifyResetOtpDto.otp,
+    );
+
+    return successResponse(result, 'Code verified', {});
   }
 
   @Post('reset-password')
@@ -103,8 +123,7 @@ export class AuthController {
   @ApiOkResponse({ description: 'Password reset successfully' })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     await this.passwordResetService.resetPassword(
-      resetPasswordDto.email,
-      resetPasswordDto.otp,
+      resetPasswordDto.resetToken,
       resetPasswordDto.newPassword,
     );
 

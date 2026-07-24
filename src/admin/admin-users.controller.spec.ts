@@ -1,3 +1,4 @@
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 
@@ -23,7 +24,7 @@ describe('AdminUsersController', () => {
     expect(response.data).toEqual({ items: [], total: 0, page: 1, limit: 20 });
   });
 
-  it('forwards the id and accessOverride flag to the service', async () => {
+  it('forwards the id, accessOverride flag, and calling admin id to the service', async () => {
     setAccessOverride.mockResolvedValue({
       userId: 'user-1',
       status: 'EXPIRED',
@@ -32,11 +33,13 @@ describe('AdminUsersController', () => {
     });
     const controller = new AdminUsersController(adminUsersService);
 
-    const response = await controller.setAccessOverride('user-1', {
-      accessOverride: true,
-    });
+    const response = await controller.setAccessOverride(
+      'user-1',
+      { accessOverride: true },
+      { userId: 'admin-1' } as AuthenticatedUser,
+    );
 
-    expect(setAccessOverride).toHaveBeenCalledWith('user-1', true);
+    expect(setAccessOverride).toHaveBeenCalledWith('user-1', true, 'admin-1');
     expect(response.data).toEqual({
       userId: 'user-1',
       status: 'EXPIRED',

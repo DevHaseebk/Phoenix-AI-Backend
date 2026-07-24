@@ -178,8 +178,17 @@ model User {
   refreshTokens   RefreshToken[]
   subscription    Subscription?
   aiUsageEvents   AiUsageEvent[]
+  auditLogEntries AuditLogEntry[]
   passwordResetOtps      PasswordResetOtp[]
   emailVerificationOtps  EmailVerificationOtp[]
+  // Escalating resend-cooldown tracking for the forgot-password OTP flow
+  // (auth/password-reset.service.ts) - a per-user counter, not per-OTP-row,
+  // since the cooldown must persist across the many OTP rows one reset
+  // sequence can create. Reset to 0 after a successful verify-reset-otp, or
+  // treated as stale (effectively 0) once passwordResetLastRequestedAt is
+  // more than PASSWORD_RESET_STALENESS_MS old - see password-reset.service.ts.
+  passwordResetRequestCount     Int       @default(0)
+  passwordResetLastRequestedAt  DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -439,6 +448,16 @@ model PasswordResetOtp {
   expiresAt    DateTime
   used         Boolean  @default(false)
   attemptCount Int      @default(0)
+  // Set true once verify-reset-otp accepts the OTP - distinct from `used`,
+  // which only flips once the password is actually changed, so the issued
+  // reset token below can't be reused after a successful password reset.
+  verified              Boolean   @default(false)
+  // Opaque single-use reset token issued on successful OTP verification,
+  // stored as a SHA-256 hash (never the raw token, same pattern as
+  // RefreshToken.tokenHash) with its own short expiry independent of the
+  // OTP's own expiresAt.
+  resetTokenHash        String?   @unique
+  resetTokenExpiresAt   DateTime?
   createdAt    DateTime @default(now())
 
   @@index([userId])
@@ -857,4 +876,25 @@ model AiUsageEvent {
 
   @@index([userId, createdAt])
   @@map("ai_usage_events")
+}
+
+// Generic audit trail for admin-gated mutating endpoints (Admin Panel
+// Prompt "Audit Log", 2026-07-21). Logging starts from when this ships -
+// no backfill for actions taken before this model existed, see
+// docs/16_Claude_Code_Handover.md.
+model AuditLogEntry {
+  id          String   @id @default(uuid())
+  adminUserId String
+  adminUser   User     @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  action      String
+  targetType  String
+  targetId    String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([adminUserId])
+  @@index([targetType, targetId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_log_entries")
 }

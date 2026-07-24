@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { AuthModule } from '../auth/auth.module';
 import { BillingModule } from '../billing/billing.module';
 import { DashboardModule } from '../dashboard/dashboard.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AI_PROVIDER } from './ai-provider.interface';
+import { resolveAiProvider } from './ai-provider-resolution.util';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { FoodItemsService } from './food/food-items.service';
@@ -28,7 +30,13 @@ import { RewardsService } from './rewards/rewards.service';
 import { UserStateService } from './user-state/user-state.service';
 
 @Module({
-  imports: [AuthModule, PrismaModule, DashboardModule, BillingModule],
+  imports: [
+    AuthModule,
+    PrismaModule,
+    DashboardModule,
+    BillingModule,
+    AuditLogModule,
+  ],
   controllers: [
     AiController,
     MemoriesController,
@@ -55,17 +63,22 @@ import { UserStateService } from './user-state/user-state.service';
       provide: AI_PROVIDER,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const aiEnabled = config.get<string>('AI_ENABLED') !== 'false';
-        const provider = config.get<string>('AI_PROVIDER') ?? 'gemini';
-        const geminiApiKey = config.get<string>('GEMINI_API_KEY');
+        const { effectiveProvider } = resolveAiProvider(config);
 
-        if (!aiEnabled || provider === 'local' || !geminiApiKey) {
+        if (effectiveProvider === 'local') {
           return new LocalAiProvider();
         }
 
-        return new GeminiAiProvider(geminiApiKey);
+        return new GeminiAiProvider(
+          config.get<string>('GEMINI_API_KEY') as string,
+        );
       },
     },
   ],
+  // AI_PROVIDER + FoodItemsService are reused as-is by admin/ (RAG content
+  // review's re-embedding, Food Database review's nutrition edits) - never
+  // duplicate the embedding-provider factory or FoodItem update conventions
+  // there.
+  exports: [AI_PROVIDER, FoodItemsService],
 })
 export class AiModule {}

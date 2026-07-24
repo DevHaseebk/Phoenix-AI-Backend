@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { SubscriptionStatus, UserRole } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminUsersService } from './admin-users.service';
 
@@ -8,10 +9,13 @@ describe('AdminUsersService', () => {
   const count = jest.fn();
   const findUnique = jest.fn();
   const upsert = jest.fn();
+  const subscriptionFindUnique = jest.fn();
   const prisma = {
     user: { findMany, count, findUnique },
-    subscription: { upsert },
+    subscription: { upsert, findUnique: subscriptionFindUnique },
   } as unknown as PrismaService;
+  const record = jest.fn();
+  const auditLog = { record } as unknown as AuditLogService;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -43,7 +47,7 @@ describe('AdminUsersService', () => {
       ]);
       count.mockResolvedValue(2);
 
-      const service = new AdminUsersService(prisma);
+      const service = new AdminUsersService(prisma, auditLog);
       const result = await service.list({});
 
       expect(findMany).toHaveBeenCalledWith(
@@ -87,7 +91,7 @@ describe('AdminUsersService', () => {
       findMany.mockResolvedValue([]);
       count.mockResolvedValue(0);
 
-      const service = new AdminUsersService(prisma);
+      const service = new AdminUsersService(prisma, auditLog);
       await service.list({
         search: ' haseeb ',
         status: SubscriptionStatus.TRIALING,
@@ -117,6 +121,7 @@ describe('AdminUsersService', () => {
   describe('setAccessOverride', () => {
     it('upserts the Subscription row, creating one with the requested value when none exists', async () => {
       findUnique.mockResolvedValue({ id: 'user-1' });
+      subscriptionFindUnique.mockResolvedValue(null);
       upsert.mockResolvedValue({
         userId: 'user-1',
         status: SubscriptionStatus.EXPIRED,
@@ -124,8 +129,8 @@ describe('AdminUsersService', () => {
         trialEndsAt: null,
       });
 
-      const service = new AdminUsersService(prisma);
-      const result = await service.setAccessOverride('user-1', true);
+      const service = new AdminUsersService(prisma, auditLog);
+      const result = await service.setAccessOverride('user-1', true, 'admin-1');
 
       expect(upsert).toHaveBeenCalledWith({
         where: { userId: 'user-1' },
@@ -145,15 +150,38 @@ describe('AdminUsersService', () => {
       expect(result.accessOverride).toBe(true);
     });
 
+    it('records an AuditLogEntry with the before/after accessOverride value', async () => {
+      findUnique.mockResolvedValue({ id: 'user-1' });
+      subscriptionFindUnique.mockResolvedValue({ accessOverride: false });
+      upsert.mockResolvedValue({
+        userId: 'user-1',
+        status: SubscriptionStatus.ACTIVE,
+        accessOverride: true,
+        trialEndsAt: null,
+      });
+
+      const service = new AdminUsersService(prisma, auditLog);
+      await service.setAccessOverride('user-1', true, 'admin-1');
+
+      expect(record).toHaveBeenCalledWith({
+        adminUserId: 'admin-1',
+        action: 'user.access-override.update',
+        targetType: 'User',
+        targetId: 'user-1',
+        metadata: { before: false, after: true },
+      });
+    });
+
     it('throws NotFoundException for a nonexistent user without touching Subscription', async () => {
       findUnique.mockResolvedValue(null);
 
-      const service = new AdminUsersService(prisma);
+      const service = new AdminUsersService(prisma, auditLog);
 
       await expect(
-        service.setAccessOverride('missing-user', true),
+        service.setAccessOverride('missing-user', true, 'admin-1'),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(upsert).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
     });
   });
 });

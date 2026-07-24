@@ -11,7 +11,10 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { UnknownFoodQueueStatus } from '@prisma/client';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AdminGuard } from '../../auth/guards/admin.guard';
+import type { AuthenticatedUser } from '../../auth/types/authenticated-user.interface';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { successResponse } from '../../common/responses/response.helper';
 import { ApproveUnknownFoodDto } from './dto/approve-unknown-food.dto';
 import { EditFoodItemDto } from './dto/edit-food-item.dto';
@@ -32,6 +35,7 @@ export class UnknownFoodsController {
   constructor(
     private readonly unknownFoodQueueService: UnknownFoodQueueService,
     private readonly foodItemsService: FoodItemsService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   @Get()
@@ -44,7 +48,11 @@ export class UnknownFoodsController {
 
   @Patch(':id/approve')
   @ApiOkResponse({ description: 'Food item created and queue item approved' })
-  async approve(@Param('id') id: string, @Body() dto: ApproveUnknownFoodDto) {
+  async approve(
+    @Param('id') id: string,
+    @Body() dto: ApproveUnknownFoodDto,
+    @CurrentUser() adminUser: AuthenticatedUser,
+  ) {
     const queueItem = await this.unknownFoodQueueService.findById(id);
 
     if (!queueItem) {
@@ -72,6 +80,19 @@ export class UnknownFoodsController {
       foodItem.id,
     );
 
+    await this.auditLog.record({
+      adminUserId: adminUser.userId,
+      action: 'unknown-food.approve',
+      targetType: 'UnknownFoodQueueItem',
+      targetId: id,
+      metadata: {
+        before: { status: queueItem.status },
+        after: { status: UnknownFoodQueueStatus.APPROVED },
+        linkedFoodItemId: foodItem.id,
+        foodItemName: foodItem.name,
+      },
+    });
+
     return successResponse(
       { foodItem, queueItem: updatedQueueItem },
       'Food item created and queue item approved',
@@ -81,7 +102,11 @@ export class UnknownFoodsController {
 
   @Patch(':id/reject')
   @ApiOkResponse({ description: 'Queue item rejected' })
-  async reject(@Param('id') id: string) {
+  async reject(
+    @Param('id') id: string,
+    @CurrentUser() adminUser: AuthenticatedUser,
+  ) {
+    const before = await this.unknownFoodQueueService.findById(id);
     const updated = await this.unknownFoodQueueService.setStatus(
       id,
       UnknownFoodQueueStatus.REJECTED,
@@ -91,12 +116,27 @@ export class UnknownFoodsController {
       throw new NotFoundException('Unknown food queue item not found');
     }
 
+    await this.auditLog.record({
+      adminUserId: adminUser.userId,
+      action: 'unknown-food.reject',
+      targetType: 'UnknownFoodQueueItem',
+      targetId: id,
+      metadata: {
+        before: { status: before?.status ?? null },
+        after: { status: UnknownFoodQueueStatus.REJECTED },
+      },
+    });
+
     return successResponse(updated, 'Queue item rejected', {});
   }
 
   @Patch(':id/needs-research')
   @ApiOkResponse({ description: 'Queue item marked as needing research' })
-  async needsResearch(@Param('id') id: string) {
+  async needsResearch(
+    @Param('id') id: string,
+    @CurrentUser() adminUser: AuthenticatedUser,
+  ) {
+    const before = await this.unknownFoodQueueService.findById(id);
     const updated = await this.unknownFoodQueueService.setStatus(
       id,
       UnknownFoodQueueStatus.NEEDS_RESEARCH,
@@ -105,6 +145,17 @@ export class UnknownFoodsController {
     if (!updated) {
       throw new NotFoundException('Unknown food queue item not found');
     }
+
+    await this.auditLog.record({
+      adminUserId: adminUser.userId,
+      action: 'unknown-food.needs-research',
+      targetType: 'UnknownFoodQueueItem',
+      targetId: id,
+      metadata: {
+        before: { status: before?.status ?? null },
+        after: { status: UnknownFoodQueueStatus.NEEDS_RESEARCH },
+      },
+    });
 
     return successResponse(
       updated,
@@ -122,7 +173,11 @@ export class UnknownFoodsController {
    */
   @Patch(':id/edit-food-item')
   @ApiOkResponse({ description: 'Food item updated successfully' })
-  async editFoodItem(@Param('id') id: string, @Body() dto: EditFoodItemDto) {
+  async editFoodItem(
+    @Param('id') id: string,
+    @Body() dto: EditFoodItemDto,
+    @CurrentUser() adminUser: AuthenticatedUser,
+  ) {
     if (
       dto.caloriesPer100g === undefined &&
       dto.proteinPer100g === undefined &&
@@ -151,6 +206,7 @@ export class UnknownFoodsController {
     const foodItem = await this.foodItemsService.update(
       queueItem.linkedFoodItemId,
       dto,
+      adminUser.userId,
     );
 
     return successResponse(foodItem, 'Food item updated successfully', {});
@@ -165,7 +221,10 @@ export class UnknownFoodsController {
    */
   @Patch(':id/restore-to-pending')
   @ApiOkResponse({ description: 'Queue item restored to pending' })
-  async restoreToPending(@Param('id') id: string) {
+  async restoreToPending(
+    @Param('id') id: string,
+    @CurrentUser() adminUser: AuthenticatedUser,
+  ) {
     const queueItem = await this.unknownFoodQueueService.findById(id);
 
     if (!queueItem) {
@@ -182,6 +241,17 @@ export class UnknownFoodsController {
       id,
       UnknownFoodQueueStatus.PENDING,
     );
+
+    await this.auditLog.record({
+      adminUserId: adminUser.userId,
+      action: 'unknown-food.restore-to-pending',
+      targetType: 'UnknownFoodQueueItem',
+      targetId: id,
+      metadata: {
+        before: { status: queueItem.status },
+        after: { status: UnknownFoodQueueStatus.PENDING },
+      },
+    });
 
     return successResponse(updated, 'Queue item restored to pending', {});
   }
